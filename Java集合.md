@@ -1,6 +1,6 @@
 ## 集合
 
-![image-20200707171238532](C:\Users\littledd\AppData\Roaming\Typora\typora-user-images\image-20200707171238532.png)
+![](https://raw.githubusercontent.com/whn961227/images/master/data/20200707220958.png)
 
 ### List，Set，Map三者区别
 
@@ -42,7 +42,6 @@ Map：存储key-value键值对，key无序不可重复，value无序可重复
 3. 插入和删除是否受元素位置的影响
 
 4. 是否支持快速随机访问
+
 5. 内存空间占用
-
-
 
