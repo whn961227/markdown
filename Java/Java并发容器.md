@@ -26,7 +26,7 @@
 
 ##### JDK1.7
 
-<img src="https://raw.githubusercontent.com/whn961227/images/master/data/20200708150849.png" style="zoom: 25%;" />
+<img src="https://raw.githubusercontent.com/whn961227/images/master/data/20200708150849.png" style="zoom: 33%;" />
 
 将数据分为段存储，然后给每一段数据加一把锁，当一个线程占用锁访问其中一个段数据时，其他段的数据也能被其他线程访问
 
@@ -36,7 +36,7 @@ Segment实现了ReetrantLock，所以Segment是一种可重入锁；HashEntry用
 
 ##### JDK1.8
 
-![image-20200708151203675](https://raw.githubusercontent.com/whn961227/images/master/data/image-20200708151203675.png)
+<img src="https://raw.githubusercontent.com/whn961227/images/master/data/image-20200708151203675.png" alt="image-20200708151203675" style="zoom: 33%;" />
 
 ConcurrentHashMap取消了Segment分段锁，才用CAS和synchronized来保证并发安全。数据结构采用 **数组+链表/红黑树**，synchronized只会锁定当前链表或红黑树的首节点，只要hash不冲突，就不会产生并发，效率提升
 
@@ -81,3 +81,8 @@ ConcurrentHashMap取消了Segment分段锁，才用CAS和synchronized来保证�
 
 ---
 
+阻塞队列（BlockingQueue）被广泛使用在“生产者-消费者”问题中，因为BlockingQueue提供了可阻塞的插入和移除的方法。当队列容器已满时，生产者线程会被阻塞，直到队列未满；当队列容器为空时，消费者线程会被阻塞，直到队列非空时为止
+
+#### ArrayBlockingQueue
+
+底层采用 **数组** 实现，
