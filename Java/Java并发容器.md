@@ -39,3 +39,45 @@ Segment实现了ReetrantLock，所以Segment是一种可重入锁；HashEntry用
 ![image-20200708151203675](https://raw.githubusercontent.com/whn961227/images/master/data/image-20200708151203675.png)
 
 ConcurrentHashMap取消了Segment分段锁，才用CAS和synchronized来保证并发安全。数据结构采用 **数组+链表/红黑树**，synchronized只会锁定当前链表或红黑树的首节点，只要hash不冲突，就不会产生并发，效率提升
+
+
+
+### CopyOnWriteArrayList
+
+---
+
+读取完全不用加锁，写入也不会阻塞读取操作，只有写入和写入之间需要进行同步等待
+
+#### 实现方式
+
+所有可变操作（add，set等）都是通过创建底层数组的新副本来实现
+
+#### 适用场景
+
+在写操作的同时允许读操作，适用于读多写少的场景
+
+##### 缺陷
+
+* **内存占用**：在写操作时需要复制一个新数组，使得内存占用为原来的两倍
+* **数据不一致**：读操作不能读取实时性数据，因为部分写操作的数据还未同步到读数组中
+
+不适合内存敏感以及对实时性要求很高的场景
+
+
+
+### ConcurrentLinkedQueue
+
+---
+
+非阻塞队列的典型，采用CAS操作实现
+
+底层数据结构是链表
+
+适用对性能要求相对较高，同时对队列的读写存在多个线程同时进行的场景
+
+
+
+### BlockingQueue
+
+---
+
