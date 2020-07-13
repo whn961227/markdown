@@ -283,6 +283,8 @@ synchronized，俗称 **对象锁** ，采用互斥的方式让同一时刻至�
 
 #### Java对象构成
 
+![image-20200713104455729](https://raw.githubusercontent.com/whn961227/images/master/data/image-20200713104455729.png)
+
 * 对象头
   * Mark Word（标记字段）：默认存储对象的hashcode，分代年龄和锁标志位信息。它会根据对象的状态复用自己的存储空间，也就是说在运行期间Mark Word里存储的数据会随着锁标志位的变化而变化
   * Klass Point（类型指针）：对象指向它的类元数据的指针，虚拟机通过这个指针来确定这个对象是哪个类的实例
@@ -340,6 +342,62 @@ synchronized，俗称 **对象锁** ，采用互斥的方式让同一时刻至�
   * 成功，则解锁成功
   * 失败，说明轻量级锁进行了锁膨胀或已经升级为重量级锁，进入重量级锁解锁流程
 
+#### 锁膨胀
+
+如果在尝试加轻量级锁的过程中，CAS操作无法成功，这时一种情况就是有其他线程为此对象加上了轻量级锁（有竞争），这时需要进行锁膨胀，将轻量级锁变为重量级锁
+
+* 当Thread-1进行轻量级加锁时，Thread-0已经对该对象加了轻量级锁
+
+  <img src="https://raw.githubusercontent.com/whn961227/images/master/data/image-20200713094139464.png" alt="image-20200713094139464" style="zoom: 33%;" />
+
+* 这时Thread-1加轻量级锁失败，进入锁膨胀流程
+
+  * 为Object对象申请Monitor锁，让Object指向重量级锁地址
+  * 然后自己进入Monitor的EntryList Blocked
+
+  ![image-20200713094510276](https://raw.githubusercontent.com/whn961227/images/master/data/image-20200713094510276.png)
+
+* 当Thread-0退出同步块解锁时，使用CAS将Mark Word的值恢复给对象头，失败。这时会进入重量级锁解锁流程，即按照Monitor地址找到Monitor对象，设置Owner为null，唤醒EntryList中Blocked线程
+
+#### 自旋优化
+
+重量级锁竞争的时候，还可以使用自旋来进行优化，如果当前线程自旋成功（即这时候持锁线程已经退出了同步块，释放了锁），这时当前线程就可以避免阻塞
+
+#### 偏向锁
+
+轻量级锁在没有竞争时，每次重入仍然需要执行CAS操作
+
+Java6中引入了偏向锁来做进一步优化：只有第一次使用CAS将线程ID设置到对象的Mark Word头，之后发现这个线程ID是自己的就表示没有竞争，不用重新CAS。
+
+##### 撤销-调用对象hashCode
+
+调用了对象的hashCode，但偏向锁的对象MarkWord中存储的是线程id，如果调用hashCode会导致偏向锁被撤销
+
+* 轻量级锁会在锁记录中记录hashCode
+* 重量级锁会在Monitor中记录hashCode
+
+##### 撤销-其他线程使用对象
+
+当有其他线程使用偏向锁对象时，会将偏向锁升级为轻量级锁
+
+##### 撤销-调用wait/notify
+
+##### 批量重定向
+
+如果对象虽然被多个线程访问，但没有竞争，这时偏向了线程T1的对象仍然有机会重新偏向T2，重偏向会重置对象的Thread ID
+
+当撤销偏向锁阈值超过20次后，jvm会给这些对象加锁时重新偏向至加锁线程
+
+##### 批量撤销
+
+当撤销偏向锁阈值超过40次后，整个类的所有对象都会变为不可偏向的，新建的对象也是不可偏向的
+
+##### 锁消除
+
+### 原理之wait/notify
+
+
+
 
 
 ### Volatile
@@ -376,7 +434,7 @@ synchronized，俗称 **对象锁** ，采用互斥的方式让同一时刻至�
 
 **本地内存和主内存的关系**
 
-![](https://raw.githubusercontent.com/whn961227/images/master/data/20200708161935.png)
+<img src="https://raw.githubusercontent.com/whn961227/images/master/data/20200708161935.png" style="zoom:33%;" />
 
 
 
