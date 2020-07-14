@@ -396,6 +396,109 @@ Java6中引入了偏向锁来做进一步优化：只有第一次使用CAS将线
 
 ### 原理之wait/notify
 
+<img src="https://raw.githubusercontent.com/whn961227/images/master/data/20200714105927.png" style="zoom:33%;" />
+
+* Owner线程发现条件不满足，调用wait方法，即可进入WaitSet变为WAITING状态
+* Blocked和Waiting的线程都处于阻塞状态，不占用CPU时间片
+* Blocked线程会在Owner线程释放锁时唤醒
+* WAITING线程会在Owner线程调用notify或notifyAll时唤醒，但唤醒后不意味着立刻获得锁，仍需进入EntryList重新竞争
+
+#### API介绍
+
+* obj.wait() 让进入object监视器的线程到waitSet等待
+* obj.notify() 在object上正在waitSet等待的线程中挑一个唤醒
+* obj.notifyAll() 让object上正在waitSet等待的线程全部唤醒
+
+属于Object对象的方法，必须获得此对象的锁，才能调用这几个方法
+
+#### sleep(long n)和wait(long n)的区别
+
+1. sleep是Thread方法，而wait是Object的方法
+2. sleep不需要强制和synchronized配合使用，但wait需要和synchronized一起用
+3. sleep在睡眠的同时，不会释放对象锁，但wait在等待的时候会释放对象锁
+
+4. 线程调用两个方法都是进入TIMED-WAITING状态
+
+### Park与Unpark
+
+```java
+LockSupport.park(); // 暂停当前线程
+LockSupport.unpark(); // 恢复某个线程的运行
+```
+
+**与Object的wait与notify相比**
+
+* wait，notify和notifyAll必须配合Object Monitor一起使用，而park，unpark不必
+* park与unpark是以线程为单位来 **阻塞** 和 **唤醒** 线程，而notify只能随机唤醒一个等待线程，notifyAll是唤醒所有等待线程
+* park与unpark可以先unpark，而wait与notify不能先notify
+
+#### 原理之park & unpark
+
+<img src="https://raw.githubusercontent.com/whn961227/images/master/data/20200714164718.png" style="zoom: 25%;" />
+
+1. 当前线程调用Unsafe.park()方法
+2. 检查_counter，本情况为0，这时，获得 _mutex互斥锁
+3. 线程进入_cond条件变量阻塞
+4. 设置_counter=0
+
+<img src="https://raw.githubusercontent.com/whn961227/images/master/data/20200714165624.png" style="zoom: 25%;" />
+
+1. 调用Unsafe.unpark(Thread_0)方法，设置_counter为1
+
+2. 唤醒_cond条件变量中的Thread_0
+3. Thread_0恢复运行
+4. 设置_counter为1
+
+<img src="https://raw.githubusercontent.com/whn961227/images/master/data/20200714165926.png" style="zoom:25%;" />
+
+1. 调用Unsafe.unpark(Thread_0)方法，设置_counter为1
+2. 当前线程调用Unsafe.park()方法
+3. 检查_counter，本情况为1，这时线程无需阻塞，继续运行
+4. 设置_counter为0
+
+### 多把锁
+
+将锁的粒度细分：
+
+* 好处，可以增强并发度
+* 坏处，如果一个线程需要同时获得多把锁，就容易发生死锁
+
+### 活跃性
+
+#### 死锁
+
+一个线程需要同时获取多把锁，这时就容易发生死锁
+
+t1线程 获得 A对象 锁，接下来想获取 B对象 的锁
+
+t2线程 获得 B对象 锁，接下来想获取 A对象 的锁
+
+```java
+Object A = new Object();
+Object B = new Object();
+
+Thread t1 = new Thread(()->{
+   synchronized(A){
+       sleep(1);
+       synchronized(B){
+           
+       }
+   } 
+}, "t1");
+
+Thread t2 = new Thread(()->{
+   synchronized(B){
+       sleep(0.5);
+       synchronized(A){
+           
+       }
+   } 
+}, "t2");
+
+t1.start();
+t2.start();
+```
+
 
 
 
