@@ -105,13 +105,13 @@
 ```java
 public static void main(String[] args) {
     // 创建线程对象
-Thread t1 = new Thread("t1") {
-    public void run() {
-        // 要执行的任务
-    }
-};
-    
-t1.run();
+    Thread t1 = new Thread("t1") {
+        public void run() {
+            // 要执行的任务
+        }
+    };
+
+    t1.run();
 }
 ```
 
@@ -283,7 +283,7 @@ synchronized，俗称 **对象锁** ，采用互斥的方式让同一时刻至�
 
 #### Java对象构成
 
-![image-20200713104455729](https://raw.githubusercontent.com/whn961227/images/master/data/image-20200713104455729.png)
+<img src="https://raw.githubusercontent.com/whn961227/images/master/data/image-20200713104455729.png" alt="image-20200713104455729" style="zoom: 50%;" />
 
 * 对象头
   * Mark Word（标记字段）：默认存储对象的hashcode，分代年龄和锁标志位信息。它会根据对象的状态复用自己的存储空间，也就是说在运行期间Mark Word里存储的数据会随着锁标志位的变化而变化
@@ -394,6 +394,8 @@ Java6中引入了偏向锁来做进一步优化：只有第一次使用CAS将线
 
 ##### 锁消除
 
+
+
 ### 原理之wait/notify
 
 <img src="https://raw.githubusercontent.com/whn961227/images/master/data/20200714105927.png" style="zoom:33%;" />
@@ -416,8 +418,9 @@ Java6中引入了偏向锁来做进一步优化：只有第一次使用CAS将线
 1. sleep是Thread方法，而wait是Object的方法
 2. sleep不需要强制和synchronized配合使用，但wait需要和synchronized一起用
 3. sleep在睡眠的同时，不会释放对象锁，但wait在等待的时候会释放对象锁
-
 4. 线程调用两个方法都是进入TIMED-WAITING状态
+
+
 
 ### Park与Unpark
 
@@ -437,17 +440,17 @@ LockSupport.unpark(); // 恢复某个线程的运行
 <img src="https://raw.githubusercontent.com/whn961227/images/master/data/20200714164718.png" style="zoom: 25%;" />
 
 1. 当前线程调用Unsafe.park()方法
-2. 检查_counter，本情况为0，这时，获得 _mutex互斥锁
-3. 线程进入_cond条件变量阻塞
-4. 设置_counter=0
+2. 检查 _counter，本情况为0，这时，获得 _mutex 互斥锁
+3. 线程进入 _cond 条件变量阻塞
+4. 设置 _counter=0
 
 <img src="https://raw.githubusercontent.com/whn961227/images/master/data/20200714165624.png" style="zoom: 25%;" />
 
-1. 调用Unsafe.unpark(Thread_0)方法，设置_counter为1
+1. 调用Unsafe.unpark(Thread_0)方法，设置 _counter 为1
 
-2. 唤醒_cond条件变量中的Thread_0
+2. 唤醒 _cond 条件变量中的Thread_0
 3. Thread_0恢复运行
-4. 设置_counter为1
+4. 设置 _counter 为1
 
 <img src="https://raw.githubusercontent.com/whn961227/images/master/data/20200714165926.png" style="zoom:25%;" />
 
@@ -456,12 +459,16 @@ LockSupport.unpark(); // 恢复某个线程的运行
 3. 检查_counter，本情况为1，这时线程无需阻塞，继续运行
 4. 设置_counter为0
 
+
+
 ### 多把锁
 
 将锁的粒度细分：
 
 * 好处，可以增强并发度
 * 坏处，如果一个线程需要同时获得多把锁，就容易发生死锁
+
+
 
 ### 活跃性
 
@@ -499,7 +506,322 @@ t1.start();
 t2.start();
 ```
 
+#### 定位死锁
 
+* 检测死锁可以使用jconsole工具，或者使用jps定位进程id，再用jstack定位死锁
+
+#### 活锁
+
+活锁出现在两个线程相互改变对方的结束条件，最后谁也无法结束
+
+#### 饥饿
+
+一个线程由于优先级太低，始终得不到CPU调度执行，也不能够结束
+
+
+
+### ReentrantLock
+
+相比于 synchronized ，具备如下特点
+
+* **可中断**
+* **可以设置超时时间**
+* **可以设置公平锁**
+* **支持多个条件变量**
+
+与 synchronized 一样，都支持可重入
+
+```java
+// 获取锁
+reentrantLock.lock();
+try {
+    // 临界区
+} finally {
+    // 释放锁
+    reentrantLock.unlock();
+}
+```
+
+#### 可重入
+
+可重入是指同一个线程如果首次获得了这把锁，那么因为它是这把锁的拥有者，因此有权利再次获得这把锁
+
+如果是不可重入锁，那么第二次获得锁时，自己也会被挡住
+
+#### 可打断
+
+```java
+reentrantLock.lockInterruptibly();
+```
+
+#### 锁超时
+
+```java
+boolean tryLock()
+boolean tryLock(long, TimeUnit)
+```
+
+#### 公平锁
+
+ReentrantLock默认是不公平的
+
+#### 条件变量
+
+synchronized中也有条件变量，就是waitSet，当条件不满足时进入waitSet等待
+
+ReentrantLock的条件变量比synchronized强大之处在于，它支持多个条件变量
+
+* synchronized是那些不满足条件的线程都在一个waitSet中等待
+* 而ReentrantLock支持多个condition，唤醒时是按照condition来唤醒
+
+使用流程
+
+* await前需要获得锁
+* await执行后，会释放锁，进入conditionObject等待
+* await的线程被唤醒(signal()、signalAll())（或打断、或超时）去重新竞争lock锁
+* 竞争lock锁成功后，从await后继续执行
+
+
+
+### 设计模式-固定运行顺序
+
+#### wait&notify
+
+```java
+/**
+先打印2，再打印1
+*/
+static final Object lock = new Object();
+static boolean t2runned = false;
+
+public static void main(String[] args) {
+	Thread t1 = new Thread(()->{
+       synchronized (lock) {
+           while (!t2runned) {
+               try{
+                   lock.wait();
+               } catch (InterruptedException e){
+                   e.printStackTrace();
+               }
+           }
+           log.debug("1");
+       }
+    }, "t1");
+    
+    Thread t2 = new Thread(()->{
+       synchronized (lock) {
+           log.debug("2");
+           t2runned = true;
+           lock.notify();
+       }
+    }, "t2");
+    
+    t1.start();
+    t2.start();
+}
+```
+
+#### await&signal
+
+```java
+/**
+先打印2，再打印1
+*/
+static final ReentrantLock LOCK = new ReentrantLock();
+static final Condition condition = LOCK.newCondition();
+static boolean t2runned = false;
+
+public static void main(String[] args) {
+    Thread t1 = new Thread(()->{
+        try {
+            LOCK.lock();
+            while(!t2runned){
+                condition.await();
+            }
+            System.out.println("1");
+        } catch (InterruptedException e) {
+            e.printStackTrace();
+        } finally {
+            LOCK.unlock();
+        }
+    }, "t1");
+
+    Thread t2 = new Thread(()->{
+        try {
+            LOCK.lock();
+            System.out.println("2");
+            t2runned = true;
+            condition.signal();
+        } finally {
+            LOCK.unlock();
+        }
+    }, "t2");
+
+    t1.start();
+    t2.start();
+}
+```
+
+#### park&unpark
+
+```java
+Thread t1 = new Thread(()->{
+    LockSupport.park();
+    System.out.println("1");
+}, "t1");
+
+Thread t2 = new Thread(()->{
+    System.out.println("2");
+    LockSupport.unpark(t1);
+}, "t2");
+
+t1.start();
+t2.start();
+```
+
+### 设计模式-交替输出
+
+#### wait&notify
+
+```java
+/**
+abcabcabcabcabc
+*/
+public class Test {
+    private int flag;
+    private int loopNumber;
+
+    public Test(int flag, int loopNumber) {
+        this.flag = flag;
+        this.loopNumber = loopNumber;
+    }
+
+    public void print(String str, int waitFlag, int nextFlag) {
+        for (int i = 0; i < loopNumber; i++) {
+            synchronized (this) {
+                while (flag != waitFlag) {
+                    try {
+                        this.wait();
+                    } catch (InterruptedException e) {
+                        e.printStackTrace();
+                    }
+                }
+                System.out.print(str);
+                flag = nextFlag;
+                this.notifyAll();
+            }
+        }
+    }
+
+    public static void main(String[] args) {
+        Test test = new Test(1, 5);
+        new Thread(()->{
+            test.print("a",1,2);
+        }).start();
+        new Thread(()->{
+            test.print("b",2,3);
+        }).start();
+        new Thread(()->{
+            test.print("c",3,1);
+        }).start();
+    }
+}
+```
+
+#### await&signal
+
+```java
+public class Test {
+    public static void main(String[] args) throws InterruptedException {
+        Awaitsignal awaitsignal = new Awaitsignal(5);
+        Condition a = awaitsignal.newCondition();
+        Condition b = awaitsignal.newCondition();
+        Condition c = awaitsignal.newCondition();
+        new Thread(()->{
+            awaitsignal.print("a",a,b);
+        }).start();
+        new Thread(()->{
+            awaitsignal.print("b",b,c);
+        }).start();
+        new Thread(()->{
+            awaitsignal.print("c",c,a);
+        }).start();
+
+        Thread.sleep(1000);
+        awaitsignal.lock();
+        a.signal();
+        awaitsignal.unlock();
+    }
+}
+
+class Awaitsignal extends ReentrantLock {
+    private int loopNumger;
+
+    public Awaitsignal(int loopNumger) {
+        this.loopNumger = loopNumger;
+    }
+
+    public void print(String str, Condition current, Condition next) {
+        for (int i = 0; i < loopNumger; i++) {
+            lock();
+            try {
+                current.await();
+                System.out.print(str);
+                next.signal();
+            } catch (InterruptedException e) {
+                e.printStackTrace();
+            } finally {
+                unlock();
+            }
+        }
+    }
+}
+```
+
+#### park&unpark
+
+```java
+public class Test {
+    static Thread a;
+    static Thread b;
+    static Thread c;
+
+    public static void main(String[] args) throws InterruptedException {
+        ParkUnpark pu = new ParkUnpark(5);
+        a = new Thread(() -> {
+            pu.print("a", b);
+        });
+        b = new Thread(() -> {
+            pu.print("b", c);
+        });
+        c = new Thread(() -> {
+            pu.print("c", a);
+        });
+        a.start();
+        b.start();
+        c.start();
+
+        LockSupport.unpark(a);
+    }
+}
+
+class ParkUnpark {
+    private int loopNumber;
+
+    public ParkUnpark(int loopNumber) {
+        this.loopNumber = loopNumber;
+    }
+
+    public void print(String str, Thread next) {
+        for (int i = 0; i < loopNumber; i++) {
+            LockSupport.park();
+            System.out.print(str);
+            LockSupport.unpark(next);
+        }
+    }
+}
+
+```
 
 
 
