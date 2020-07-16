@@ -849,7 +849,7 @@ class ParkUnpark {
 * 写屏障会确保指令重排序时，不会将写屏障之前的代码排在写屏障之后
 * 读屏障会确保指令重排序时，不会将读屏障之后的代码排在读屏障之前
 
-不能解决指令交错：
+**不能解决指令交错**：
 
 * 写屏障仅仅时保证之后的读能够读到最新结果，但不能保证读跑到它前面去
 * 而有序性的保证也只是保证了本线程内相关代码不被重排序
@@ -896,5 +896,99 @@ class ParkUnpark {
 
   每个线程操作数据的时候会把数据从主内存读取到自己的工作内存，如果操作了数据并且写回了，其他已经读取的线程的变量副本就失效了
 
+### Happens-before
 
+规定了对共享变量的写操作对其他线程的读操作可见，它是可见性与有序性的一套规则总结，抛开以下happens-before规则 ，JMM并不能保证一个线程对共享变量的写，对于其他线程对该共享变量的读可见
 
+* 线程解锁m之前对变量的写，对于接下来对m加锁的其他线程对该变量的读可见
+
+  ```java
+  static int x;
+  static Object m = new Object();
+  
+  new Thread(()->{
+      synchronized(m){
+          x = 10;
+      }
+  },"t1").start();
+  
+  new Thread(()->{
+      synchronized(m){
+          System.out.println(x);
+      }
+  },"t2").start();
+  ```
+
+* 线程对volatile变量的写，对接下来其他线程对该变量的读可见
+
+  ```java
+  volatile static int x;
+  
+  new Thread(()->{
+      x = 10;
+  }, "t1").start();
+  
+  new Thread(()->{
+      System.out.println(x);
+  }, "t2").start();
+  ```
+
+* 线程start前对变量的写，对该线程开始后对该变量的读可见
+
+  ```java
+  static int x;
+  
+  x = 10;
+  
+  new Thread(()->{
+      System.out.println(x);
+  }, "t2").start();
+  ```
+
+* 线程结束前对变量的写，对其他线程得知它结束后的读可见（比如其他线程调用 t1.isAlive() 或 t1.join() 等待它结束）
+
+  ```java
+  static int x;
+  
+  Thread t1 = new Thread(()->{
+      x = 10;
+  }, "t1");
+  t1.start();
+  
+  t1.join();
+  System.out.println(x);
+  ```
+
+* 线程 t1 打断 t2 （interrupt）前对变量的写，对于其他线程得知 t2 被打断后对变量的读可见（通过t2.interrupted 或 t2.isInterrupted）
+
+  ```java
+  static int x;
+  
+  public static void main(String[] args) {
+      Thread t2 = new Thread(()->{
+          while (true) {
+              if (Thread.currentThread().isInterrupted()){
+                  System.out.println(x);
+                  break;
+              }
+          }
+      }, "t2");
+      t2.start();
+  
+      new Thread(()->{
+          try {
+              TimeUnit.SECONDS.sleep(1);
+          } catch (InterruptedException e) {
+              e.printStackTrace();
+          }
+          x = 10;
+          t2.interrupt();
+      }, "t1").start();
+  
+      while (!t2.isInterrupted())
+          Thread.yield();
+      System.out.println(x);
+  }
+  ```
+
+  
