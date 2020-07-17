@@ -991,4 +991,242 @@ class ParkUnpark {
   }
   ```
 
+* 对变量默认值（0，false，null）的写，对其他线程对该变量的读可见
+
+* 具有传递性，配合volatile的禁止指令重排
+
+  ```java
+  volatile static int x;
+  static int y;
   
+  new Thread(()->{
+      y = 10;
+      x = 20;
+  }, "t1").start();
+  
+  new Thread(()->{
+      // x=20 对 t2 可见，同时 y=10 也对 t2 可见
+      System.out.println(x);
+  }, "t2").start();
+  ```
+
+### 线程安全单例习题
+
+>饿汉式：类加载就会导致该单实例对象被创建
+>
+>懒汉式：类加载不会导致该单实例对象被创建，而是首次使用该对象时才会被创建
+
+实现1：
+
+```java
+// 问题1：为什么加final ====> 防止子类覆盖父类中的方法，破坏单例
+// 问题2：如果实现了序列化接口，如何防止反序列化破坏单例
+public final class Singleton implements Serializable {
+    // 问题3：为什么设置为私有？是否能防止反射创建新的实例？ ====> 如果不设置为私有，其他的类都能创建对象，无法保证单例；不能防止
+    private Singleton(){}
+    // 问题4：这样初始化能不能保证单例对象创建时的线程安全？ ====> 能，静态成员变量的初始化操作在类加载时完成，由JVM保证代码的线程安全性
+    private static final Singleton INSTANCE = new Singleton();
+    // 问题5：为什么提供静态方法而不是直接将 INSTANCE 设置为 public，说出你知道的理由 ====> 方法能提供更好的封装性，能实现懒惰的初始化；创建单例对象时能提供更多的控制；提供泛型的支持
+    public static Singleton getInstance() {
+        return INSTANCE;
+    }
+    // 防止反序列化破坏单例
+    public Object readResolve() {
+        return INSTANCE;
+    }
+}
+```
+
+实现2：
+
+```java
+// 问题1：枚举单例是如何限制实例个数的 ===> INSTANCE 相当于是枚举类的静态成员变量
+// 问题2：枚举单例在创建时是否有并发问题 ===> 没有，静态成员变量的初始化操作在类加载时完成，由JVM保证代码的线程安全性
+// 问题3：枚举单例能否反射破坏单例 ===> 不能
+// 问题4：枚举单例能否被反序列化破坏单例 ===> 不能
+// 问题5：枚举单例属于懒汉式还是饿汉式 ===> 饿汉式
+// 问题6：枚举单例如果希望加入一些单例创建时的初始化逻辑该如何做 ===> 用构造方法
+enum Singleton {
+    INSTANCE;
+}
+```
+
+实现3：
+
+```java
+public final class Singleton {
+    private Singleton(){}
+    private static Singleton INSTANCE = null;
+    // 分析这里的线程安全，并说明有什么缺点 ====> synchronized 加在静态方法上，相当于把锁加在了Singleton.class上，类对象和静态成员变量是对应的，就能提供对静态成员变量的线程安全保护；锁的范围大，每次调用都会加锁，性能低下
+    public static synchronized Singleton getInstance() {
+        if (INSTANCE != null)
+            return INSTANCE;
+        INSTANCE = new Singleton();
+        return INSTANCE;
+    }
+}
+```
+
+实现4：
+
+```java
+public final class Singleton{
+    private Singleton(){}
+    // 问题1：解释为什么加volatile ===> 防止指令重排序
+    private static volatile Singleton INSTANCE = null;
+    // 问题2：对比实现3，说出这样的意义 ===> 缩小加锁范围，提升性能
+    public static Singleton getInstance(){
+        if (INSTANCE != null)
+            return INSTANCE;
+        synchronized(Singleton.class) {
+            // 问题3：为什么还要在这里加非空判断，之前不是判断过了吗 ====> 防止并发情况下，第一次创建的单例对象不会被覆盖
+            if (INSTANCE != null) 
+                return INSTANCE;
+            INSTANCE = new Singleton();
+            return INSTANCE;
+        }
+    }
+}
+```
+
+实现5：
+
+```java
+public final class Singleton{
+    private Singleton(){}
+    // 问题1：属于饿汉式还是懒汉式 ===> 懒汉式
+    private static class LazyHolder {
+        static final Singleton INSTANCE = new Singleton();
+    }
+    // 问题2：在创建时是否有并发问题 ====> 不会，静态成员变量的初始化操作在类加载时完成，由JVM保证代码的线程安全性
+    public static Singleton getInstance() {
+        return LazyHolder.INSTANCE;
+    }
+}
+```
+
+### CAS与volatile
+
+#### CAS工作方式
+
+```java
+public void withdraw(Integer amount) {
+    while (true) {
+        int prev = balance.get();
+        int next = prev - amount;
+        // 比较并设置值
+        if (balance.compareAndSet(prev, next)) {
+            break;
+        }
+    }
+}
+```
+
+CAS必须借助volatile才能读取到共享变量的最新值来实现 **比较并交换** 的结果
+
+#### CAS的特点
+
+结合CAS和volatile可以实现无锁并发，适用于线程数少、多核CPU的场景下
+
+* CAS是基于乐观锁的思想：最乐观的估计，不怕别的线程来修改共享变量，就算改了也没关系，继续重试
+* sychronized是基于悲观锁的思想：最悲观的估计，防着其他线程来修改共享变量，上锁其他线程都不能改，解锁之后其他线程才有机会
+* CAS体现的是无锁并发，无阻塞并发
+  * 因为没有使用synchronized，所以线程不会阻塞，效率提升
+  * 但如果竞争激烈，重试必然频繁发生，效率会受到影响
+
+#### ABA问题
+
+主线程仅能判断出共享变量的值与最初值是否相同，不能感知到这种从A改为B再改回A的情况，如果主线程希望：
+
+只要有其他线程 **改动了** 共享变量，那么自己的cas就算失败，这时，仅比较值是不够的，需要再加一个版本号
+
+### 自定义线程池-阻塞队列
+
+```java
+class BlockingQueue<T> {
+    // 1.任务队列
+    private Deque<T> queue = new ArrayDeque<>();
+    
+    // 2.锁
+    private ReentrantLock lock = new ReentrantLock();
+    
+    // 3.生产者条件变量
+    private Condition fullWaitSet = lock.newCondition();
+    
+    // 4.消费者条件变量
+    private Condition emptyWaitSet = lock.newCondition();
+    
+    // 5.容量
+    private int capcity;
+    
+    // 带超时的阻塞获取
+    public T poll(long timeout, TimeUnit unit) {
+        lock.lock();
+        try {
+            // 将timeout统一转换为纳秒
+            long nanos = unit.toNanos(timeout);
+            while(queue.isEmpty()) {
+                try {
+                    // 返回的是剩余时间
+                    nanos = emptyWaitSet.awaitNanos(nanos);
+                } catch (InterruptedException e) {
+                    e.printStackTrace();
+                }
+            }
+            T t = queue.removeFirst();
+            fullWaitSet.signal();
+            return t;
+        } finally {
+            lock.unlock();
+        }
+    }
+    
+    // 阻塞获取
+    public T take() {
+        lock.lock();
+        try {
+            while(queue.isEmpty()) {
+                try {
+                    emptyWaitSet.await();
+                } catch (InterruptedException e) {
+                    e.printStackTrace();
+                }
+            }
+            T t = queue.removeFirst();
+            fullWaitSet.signal();
+            return t;
+        } finally {
+            lock.unlock();
+        }
+    }
+    
+    // 阻塞添加
+    public void put(T element) {
+        lock.lock();
+        try {
+            while(queue.size() == capcity) {
+                try {
+                    fullWaitSet.await();
+                } catch (InterruptedException e) {
+                    e.printStackTrace();
+                }
+            }
+            queue.addLast(element);
+            emptyWaitSet.signal();
+        } finally {
+            lock.unlock();
+        }
+    }
+    
+    // 获取大小
+    public int size() {
+        lock.lock();
+        try {
+            return queue.size();
+        } finally {
+            lock.unlock();
+        }
+    }
+}
+```
+
