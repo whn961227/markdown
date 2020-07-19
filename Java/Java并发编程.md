@@ -96,7 +96,7 @@
 当上下文切换发生时，需要由操作系统保存当前线程的状态，并恢复另一个线程的状态，Java中对应的概念就是**程序计数器**，它的作用是记住下一条jvm指令的执行地址，是线程私有的
 
 * 状态包括程序计数器、虚拟机栈中每个栈帧的信息，如局部变量、操作数栈、返回地址等
-* 频繁的上下文切换会影响性能了
+* 频繁的上下文切换会影响性能
 
 
 
@@ -115,7 +115,7 @@ public static void main(String[] args) {
 }
 ```
 
-程序仍然在main线程运行
+程序仍然在 **main线程** 运行
 
 
 
@@ -123,14 +123,14 @@ public static void main(String[] args) {
 
 #### sleep
 
-1. 调用sleep会让当前线程从Running进入Timed Waiting状态
-2. 其他线程可以使用interrupt打断正在睡眠的线程，这时sleep方法会抛出InterruptedException
+1. 调用sleep会让当前线程从 Running 进入 **Timed Waiting** 状态
+2. 其他线程可以使用 interrupt 打断正在睡眠的线程，这时 sleep 方法会抛出 InterruptedException
 3. 睡眠结束后的线程未必会立刻得到执行
 4. 建议用TimeUnit的sleep代替Thread的sleep来获得更好的可读性
 
 #### yield
 
-1. 调用yield会让当前线程从Running进入Runnable就绪状态，然后调度执行其他线程
+1. 调用 yield 会让当前线程从 Running 进入 **Runnable** 就绪状态，然后调度执行其他线程
 2. 具体的实现依赖于操作系统的任务调度器
 
 
@@ -168,8 +168,8 @@ private static void test1() throws InterruptedException {
 
 分析
 
-* 因为主线程和t1线程是并行执行的，t1线程需要1s之后才能赋值r=10
-* 主线程一开始就打印r的值，所以只能打印出r=0
+* 因为主线程和 t1 线程是并行执行的，t1 线程需要 1s 之后才能赋值 r = 10
+* 主线程一开始就打印 r 的值，所以只能打印出 r = 0
 
 解决方法
 
@@ -182,15 +182,60 @@ private static void test1() throws InterruptedException {
 
 #### 打断sleep，wait，join的线程
 
-清空打断状态
+清空打断状态，以异常的方式表示被打断，打断标记为 false
 
 #### 打断正常运行的线程
 
-不会清空打断状态
+不会清空打断状态，打断标记为 true，由被打断线程自己决定是否停止运行，可以通过打断标记来判断
 
-#### isInterrupted和interrupted
+#### 打断 park 线程
 
-isInterrupted不会清空打断状态；interrupted清空打断状态
+不会清空打断状态，打断标记为 true，如果打断标记为 true，再次调用 park 方法将失效
+
+
+
+
+
+### isInterrupted和interrupted
+
+isInterrupted判断打断标记，不会清空打断状态；interrupted判断打断标记，清空打断状态
+
+
+
+### 模式之两阶段终止
+
+```java
+class TwoPhaseTermination {
+    private Thread monitor;
+
+    // 启动监控线程
+    public void start() {
+        monitor = new Thread(() -> {
+            while (true) {
+                Thread thread = Thread.currentThread();
+                if (thread.isInterrupted()) {
+                    System.out.println("料理后事...");
+                    break;
+                }
+                try {
+                    Thread.sleep(1000); // 打断情况 1
+                    System.out.println("执行监控记录"); // 打断情况 2
+                } catch (InterruptedException e) {
+                    e.printStackTrace();
+                    // 重新设置打断标记
+                    thread.interrupt();
+                }
+            }
+        });
+        monitor.start();
+    }
+
+    // 停止监控线程
+    public void stop() {
+        monitor.interrupt();
+    }
+}
+```
 
 
 
@@ -281,12 +326,12 @@ synchronized，俗称 **对象锁** ，采用互斥的方式让同一时刻至�
 
 ### Monitor概念
 
-#### Java对象构成
+#### Java对象头构成
 
-<img src="https://raw.githubusercontent.com/whn961227/images/master/data/image-20200713104455729.png" alt="image-20200713104455729" style="zoom: 50%;" />
+<img src="https://raw.githubusercontent.com/whn961227/images/master/data/image-20200713104455729.png" alt="image-20200713104455729" style="zoom: 67%;" />
 
 * 对象头
-  * Mark Word（标记字段）：默认存储对象的hashcode，分代年龄和锁标志位信息。它会根据对象的状态复用自己的存储空间，也就是说在运行期间Mark Word里存储的数据会随着锁标志位的变化而变化
+  * Mark Word（标记字段）：默认存储对象的 hashcode，分代年龄和锁标志位信息。它会根据对象的状态复用自己的存储空间，也就是说在运行期间 Mark Word 里存储的数据会随着 **锁标志位** 的变化而变化
   * Klass Point（类型指针）：对象指向它的类元数据的指针，虚拟机通过这个指针来确定这个对象是哪个类的实例
 * 实例数据
   * 这部分主要是存放类的数据信息，父类的信息
@@ -299,14 +344,16 @@ synchronized，俗称 **对象锁** ，采用互斥的方式让同一时刻至�
 
 #### Monitor
 
-* 刚开始Monitor的Owner为null
-* 当Thread-2执行synchronized(obj)就会将Monitor的所有者Owner置位Thread-2，Monitor中只能有一个Owner
-* 在Thread-2上锁的过程中，如果Thread-3，Thread-4，Thread-5也来执行synchronized(obj)，就会进入EntryList Blocked
-* Thread-2执行完同步代码块的内容，然后唤醒EntryList中等待的线程来竞争锁，竞争是非公平的
-* WaitSet中的线程是之前获得过锁，但条件不满足进入Waiting状态的线程
+![image-20200719223648861](https://raw.githubusercontent.com/whn961227/images/master/data/image-20200719223648861.png)
 
-> * synchronized必须是进入同一个对象的monitor
-> * 不加synchronized的对象不会关联监视器，不遵从以上规则
+* 刚开始 Monitor 的 Owner 为 null
+* 当 Thread-2 执行 synchronized(obj) 就会将 Monitor 的所有者 Owner 置为 Thread-2 ， Monitor 中只能有一个Owner
+* 在 Thread-2 上锁的过程中，如果 Thread-3，Thread-4，Thread-5 也来执行 synchronized(obj)，就会进入EntryList Blocked 状态
+* Thread-2 执行完同步代码块的内容，然后唤醒 EntryList 中等待的线程来竞争锁，竞争是非公平的
+* WaitSet 中的线程是之前获得过锁，但条件不满足进入 Waiting 状态的线程
+
+> * synchronized 必须是进入同一个对象的 monitor
+> * 不加 synchronized 的对象不会关联 monitor，不遵从以上规则
 
 
 
@@ -316,48 +363,48 @@ synchronized，俗称 **对象锁** ，采用互斥的方式让同一时刻至�
 
 如果一个对象虽然有多线程访问，但多线程访问的时间是错开的（也就是没有竞争），那么可以使用轻量级锁来优化
 
-* 创建锁记录（Lock Record）对象，每个线程对应的栈帧都会包含一个锁记录的结构，内部可以存储锁定对象的Mark Word
+* 创建锁记录（Lock Record）对象，每个线程对应的栈帧都会包含一个 **锁记录** 的结构，内部可以存储锁定对象的 Mark Word
 
 ![](https://raw.githubusercontent.com/whn961227/images/master/data/20200712225008.png)
 
-* 让锁记录中的Object reference指向锁对象，尝试使用cas替换Object的Mark Word，将Mark Word的值存入锁记录
+* 让锁记录中的 Object reference 指向锁对象，尝试使用 cas 替换 Object 的 Mark Word，将 Mark Word 的值存入锁记录
 
   ![image-20200712225249200](https://raw.githubusercontent.com/whn961227/images/master/data/image-20200712225249200.png)
 
-* 如果cas替换成功，对象头中存储了锁记录地址和状态00，表示由该线程给对象加锁
+* 如果 cas 替换成功，对象头中存储了锁记录地址和状态 00，表示由该线程给对象加锁
 
   ![](https://raw.githubusercontent.com/whn961227/images/master/data/20200712225431.png)
 
-* 如果cas失败，有两种情况
-  * 如果是其他线程已经持有了该Object的轻量级锁，这时表明有竞争，进入锁膨胀过程
-  * 如果是自己执行了synchronized锁重入，那么再添加一条Lock Record作为重入的计数
+* 如果 cas 失败，有两种情况
+  * 如果是其他线程已经持有了该 Object 的轻量级锁，这时表明有竞争，进入锁膨胀过程
+  * 如果是自己执行了 synchronized 锁重入，那么再添加一条 Lock Record 作为重入的计数
 
 ![image-20200712225746648](https://raw.githubusercontent.com/whn961227/images/master/data/image-20200712225746648.png)
 
-* 当退出synchronized代码块（解锁时）如果有取值为null的锁记录，表示有重入，这时重置锁记录，表示重入计数减1
+* 当退出 synchronized 代码块（解锁时）如果有取值为 null 的锁记录，表示有重入，这时重置锁记录，表示重入计数减 1
 
 ![image-20200712225923341](https://raw.githubusercontent.com/whn961227/images/master/data/image-20200712225923341.png)
 
-* 当退出synchronized代码块（解锁时）锁记录的值不为null，这时使用cas将Mark Word的值恢复给对象头
+* 当退出 synchronized 代码块（解锁时）锁记录的值不为 null，这时使用 cas 将 Mark Word 的值恢复给对象头
   * 成功，则解锁成功
   * 失败，说明轻量级锁进行了锁膨胀或已经升级为重量级锁，进入重量级锁解锁流程
 
 #### 锁膨胀
 
-如果在尝试加轻量级锁的过程中，CAS操作无法成功，这时一种情况就是有其他线程为此对象加上了轻量级锁（有竞争），这时需要进行锁膨胀，将轻量级锁变为重量级锁
+如果在尝试加轻量级锁的过程中，CAS 操作无法成功，这时一种情况就是有其他线程为此对象加上了轻量级锁（有竞争），这时需要进行锁膨胀，将轻量级锁变为重量级锁
 
-* 当Thread-1进行轻量级加锁时，Thread-0已经对该对象加了轻量级锁
+* 当 Thread-1 进行轻量级加锁时，Thread-0 已经对该对象加了轻量级锁
 
   <img src="https://raw.githubusercontent.com/whn961227/images/master/data/image-20200713094139464.png" alt="image-20200713094139464" style="zoom: 33%;" />
 
-* 这时Thread-1加轻量级锁失败，进入锁膨胀流程
+* 这时 Thread-1 加轻量级锁失败，进入锁膨胀流程
 
-  * 为Object对象申请Monitor锁，让Object指向重量级锁地址
-  * 然后自己进入Monitor的EntryList Blocked
+  * 为 Object 对象申请 Monitor 锁，让 Object 指向重量级锁地址
+  * 然后自己进入 Monito r的 EntryList Blocked 状态
 
   ![image-20200713094510276](https://raw.githubusercontent.com/whn961227/images/master/data/image-20200713094510276.png)
 
-* 当Thread-0退出同步块解锁时，使用CAS将Mark Word的值恢复给对象头，失败。这时会进入重量级锁解锁流程，即按照Monitor地址找到Monitor对象，设置Owner为null，唤醒EntryList中Blocked线程
+* 当 Thread-0 退出同步块解锁时，使用 CAS 将 Mark Word 的值恢复给对象头，失败。这时会进入重量级锁解锁流程，即按照 Monitor 地址找到 Monitor 对象，设置 Owner 为 null，唤醒 EntryList 中 Blocked 线程
 
 #### 自旋优化
 
@@ -365,9 +412,9 @@ synchronized，俗称 **对象锁** ，采用互斥的方式让同一时刻至�
 
 #### 偏向锁
 
-轻量级锁在没有竞争时，每次重入仍然需要执行CAS操作
+轻量级锁在没有竞争时，每次重入仍然需要执行 CAS 操作
 
-Java6中引入了偏向锁来做进一步优化：只有第一次使用CAS将线程ID设置到对象的Mark Word头，之后发现这个线程ID是自己的就表示没有竞争，不用重新CAS。
+Java 6 中引入了偏向锁来做进一步优化：只有第一次使用 CAS 将线程 ID 设置到对象的 Mark Word 头，之后发现这个线程 ID 是自己的就表示没有竞争，不用重新 CAS。
 
 ##### 撤销-调用对象hashCode
 
