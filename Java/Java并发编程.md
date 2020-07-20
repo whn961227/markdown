@@ -1,4 +1,4 @@
-## 并发编程
+##  并发编程
 
 ### 并行与并发
 
@@ -1562,9 +1562,9 @@ public final class Singleton{
 
 
 
-### CAS与volatile
+### CAS 与 volatile
 
-#### CAS工作方式
+#### CAS 工作方式
 
 ```java
 public void withdraw(Integer amount) {
@@ -1579,27 +1579,62 @@ public void withdraw(Integer amount) {
 }
 ```
 
-CAS必须借助volatile才能读取到共享变量的最新值来实现 **比较并交换** 的结果
+CAS 必须借助 volatile 才能读取到共享变量的最新值来实现 **比较并交换** 的结果
 
-#### CAS的特点
+#### CAS 的特点
 
-结合CAS和volatile可以实现无锁并发，适用于线程数少、多核CPU的场景下
+结合 CAS 和 volatile 可以实现无锁并发，适用于线程数少、多核CPU的场景下
 
-* CAS是基于乐观锁的思想：最乐观的估计，不怕别的线程来修改共享变量，就算改了也没关系，继续重试
-* sychronized是基于悲观锁的思想：最悲观的估计，防着其他线程来修改共享变量，上锁其他线程都不能改，解锁之后其他线程才有机会
-* CAS体现的是无锁并发，无阻塞并发
-  * 因为没有使用synchronized，所以线程不会阻塞，效率提升
+* CAS 是基于乐观锁的思想：最乐观的估计，不怕别的线程来修改共享变量，就算改了也没关系，继续重试
+* sychronized 是基于悲观锁的思想：最悲观的估计，防着其他线程来修改共享变量，上锁其他线程都不能改，解锁之后其他线程才有机会
+* CAS 体现的是无锁并发，无阻塞并发
+  * 因为没有使用 synchronized，所以线程不会阻塞，效率提升
   * 但如果竞争激烈，重试必然频繁发生，效率会受到影响
 
 #### ABA问题
 
-主线程仅能判断出共享变量的值与最初值是否相同，不能感知到这种从A改为B再改回A的情况，如果主线程希望：
+主线程仅能判断出共享变量的值与最初值是否相同，不能感知到这种从 A 改为 B 再改回 A 的情况，如果主线程希望：
 
-只要有其他线程 **改动了** 共享变量，那么自己的cas就算失败，这时，仅比较值是不够的，需要再加一个版本号
+只要有其他线程 **改动了** 共享变量，那么自己的 cas 就算失败，这时，仅比较值是不够的，需要再加一个版本号
 
 
 
-### 自定义线程池-阻塞队列
+### 不可变类的设计
+
+#### final 的使用
+
+发现该类、类中所有属性都是 final 的
+
+* 属性用 final 修饰保证了该属性是只读的，不能修改
+* 类用 final 修饰保证了该类中的方法不能被覆盖，防止子类无意间破坏不可变性
+
+#### 保护性拷贝
+
+构造新字符串对象时，会生成新的 char[] value，对内容进行复制。通过创建副本对象来避免共享的手段称为 **保护性拷贝**
+
+
+
+### 享元模式
+
+当需要重用数量有限的同一类对象时
+
+
+
+### 自定义连接池
+
+
+
+### 设置 final 变量的原理
+
+final 变量的赋值也会通过 putfield 指令来完成，同样在这条指令之后也会加入写屏障，保证在其他线程读到它的值时不会出现为 0 的情况
+
+### 获取 final 变量的原理
+
+
+
+
+
+### 自定义线程池
 
 ```java
 public class TestPool {
@@ -1628,10 +1663,8 @@ interface RejectPolicy<T> {
 class ThreadPool {
     // 任务队列
     private BlockingQueue<Runnable> taskQueue;
-
     // 线程集合
     private HashSet<Worker> workers = new HashSet<>();
-
     // 核心线程数
     private int coreSize;
 
@@ -1700,10 +1733,11 @@ class ThreadPool {
     }
 }
 
+// 阻塞队列
 class BlockingQueue<T> {
-
+	// 任务队列
     private Deque<T> queue = new ArrayDeque<>();
-
+	// 锁
     private ReentrantLock lock = new ReentrantLock();
 
     private Condition fullWaitSet = lock.newCondition();
@@ -1974,7 +2008,7 @@ class MyLock implements Lock {
         }
     }
 
-    private MySync sync = new MySync();‘
+    private MySync sync = new MySync();
 
     @Override // 加锁（不成功会进入等待队列等待）
     public void lock() {
@@ -2015,6 +2049,8 @@ class MyLock implements Lock {
 ![image-20200718225738652](https://raw.githubusercontent.com/whn961227/images/master/data/image-20200718225738652.png)
 
 #### 非公平锁实现原理
+
+##### 加锁解锁流程
 
 先从构造器开始看，默认为非公平锁实现
 

@@ -1,24 +1,25 @@
 ## 基础
 
-### 基础语法
+### Java 基本功
 
-#### hashCode()与equals()
+#### JVM、JDK、JRE
 
-1. 如果根据equals(Object)方法，两个对象相等，则hashCode一定相同
-2. 两个对象有相同的hashcode，也不一定相等
-3. equals方法被重写，hashCode方法也必须被重写
+##### JVM
 
-##### equals()特性
+**什么是字节码？采用字节码的好处是什么**
 
-自反性；对称性；传递性；一致性；x.equals(null)=false
+> 在 Java 中，JVM 可以理解的代码就叫做 **字节码**（即扩展名为 .class 的文件），它只面向虚拟机。
 
-#### ==与equals的区别
+Java 程序从源代码到运行一般有下面 3 步：
 
-对于基本类型，==比较的是值
+<img src="https://raw.githubusercontent.com/whn961227/images/master/data/image-20200720225705419.png" alt="image-20200720225705419" style="zoom:80%;" />
 
-对于引用类型（包括包装类型），如果没有被重写，==比较的是两个引用是否指向同一个对象地址；如果被重写，比较的是地址里的内容
+格外注意 .class -> 机器码 这一步，
 
-### 包装类
+**总结：**
 
-#### String
+* Java 虚拟机（JVM）是运行 Java 字节码的虚拟机
+
+* JVM 有针对不同系统的特定实现（Windows、Linux、macOS），目的是使用相同的字节码，他们都会给出相同的结果
+* 字节码和不同系统的 JVM 实现是 Java 语言 “一次编译，随处可以运行” 的关键所在
 
