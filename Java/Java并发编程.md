@@ -416,56 +416,321 @@ synchronized，俗称 **对象锁** ，采用互斥的方式让同一时刻至�
 
 Java 6 中引入了偏向锁来做进一步优化：只有第一次使用 CAS 将线程 ID 设置到对象的 Mark Word 头，之后发现这个线程 ID 是自己的就表示没有竞争，不用重新 CAS。
 
-##### 撤销-调用对象hashCode
+禁用偏向锁 VM 参数 -XX:-UseBiasedLocking，直接使用轻量级锁
+
+#### 偏向状态
+
+一个对象创建时：
+
+* 如果开启了偏向锁（默认开启），那么对象创建后，markword 值为 0x05 即最后 3 位为 101，这时它的 thread、epoch、age 都为 0
+* 偏向锁默认是 **延迟** 的，不会在程序启动时立即生效，如果想避免延迟，可以加 VM 参数 -XX:BiasedLockingStartupDelay = 0 来禁用延迟
+* 如果没有开启偏向锁，那么对象创建后，markword 值为 0x01 即最后 3 位为 001，这时它的 hashcode、age 都为 0，第一次用到 hashcode 时才会赋值
+
+##### 撤销-调用对象 hashCode
 
 调用了对象的hashCode，但偏向锁的对象MarkWord中存储的是线程id，如果调用hashCode会导致偏向锁被撤销
 
-* 轻量级锁会在锁记录中记录hashCode
-* 重量级锁会在Monitor中记录hashCode
+* 轻量级锁会在 **锁记录** 中记录hashCode
+* 重量级锁会在 **Monitor** 中记录hashCode
 
 ##### 撤销-其他线程使用对象
 
 当有其他线程使用偏向锁对象时，会将偏向锁升级为轻量级锁
 
-##### 撤销-调用wait/notify
+##### 撤销-调用 wait/notify
 
 ##### 批量重定向
 
-如果对象虽然被多个线程访问，但没有竞争，这时偏向了线程T1的对象仍然有机会重新偏向T2，重偏向会重置对象的Thread ID
+如果对象虽然被多个线程访问，但没有竞争，这时偏向了线程 T1 的对象仍然有机会重新偏向 T2，重偏向会重置对象的 Thread ID
 
-当撤销偏向锁阈值超过20次后，jvm会给这些对象加锁时重新偏向至加锁线程
+当撤销偏向锁阈值超过 20 次后，jvm 会给这些对象加锁时重新偏向至加锁线程
 
 ##### 批量撤销
 
-当撤销偏向锁阈值超过40次后，整个类的所有对象都会变为不可偏向的，新建的对象也是不可偏向的
+当撤销偏向锁阈值超过 40 次后，整个类的所有对象都会变为不可偏向的，新建的对象也是不可偏向的
 
 ##### 锁消除
 
 
 
-### 原理之wait/notify
+### 原理之 wait/notify
 
 <img src="https://raw.githubusercontent.com/whn961227/images/master/data/20200714105927.png" style="zoom:33%;" />
 
-* Owner线程发现条件不满足，调用wait方法，即可进入WaitSet变为WAITING状态
-* Blocked和Waiting的线程都处于阻塞状态，不占用CPU时间片
-* Blocked线程会在Owner线程释放锁时唤醒
-* WAITING线程会在Owner线程调用notify或notifyAll时唤醒，但唤醒后不意味着立刻获得锁，仍需进入EntryList重新竞争
+* Owner 线程发现条件不满足，调用 wait 方法，即可进入 WaitSet 变为 WAITING状态
+* Blocked 和 Waiting 的线程都处于阻塞状态，不占用 CPU 时间片
+* Blocked 线程会在 Owner 线程释放锁时唤醒
+* WAITING 线程会在 Owner 线程调用 notify 或 notifyAll 时唤醒，但唤醒后不意味着立刻获得锁，仍需进入 EntryList 重新竞争
 
 #### API介绍
 
-* obj.wait() 让进入object监视器的线程到waitSet等待
-* obj.notify() 在object上正在waitSet等待的线程中挑一个唤醒
-* obj.notifyAll() 让object上正在waitSet等待的线程全部唤醒
+* obj.wait() 让进入 object monitor的线程到 waitSet 等待
+* obj.notify() 在 object上 正在 waitSet 等待的线程中挑一个唤醒
+* obj.notifyAll() 让 object 上正在 waitSet 等待的线程全部唤醒
 
-属于Object对象的方法，必须获得此对象的锁，才能调用这几个方法
+属于 Object 对象的方法，必须获得此对象的锁，才能调用这几个方法
 
-#### sleep(long n)和wait(long n)的区别
 
-1. sleep是Thread方法，而wait是Object的方法
-2. sleep不需要强制和synchronized配合使用，但wait需要和synchronized一起用
-3. sleep在睡眠的同时，不会释放对象锁，但wait在等待的时候会释放对象锁
-4. 线程调用两个方法都是进入TIMED-WAITING状态
+
+### sleep(long n)和wait(long n)的区别
+
+1. sleep是 Thread 方法，而 wait 是 Object 的方法
+2. sleep 不需要强制和 synchronized 配合使用，但 wait 需要和 synchronized 一起用
+3. sleep 在睡眠的同时，不会释放对象锁，但 wait 在等待的时候会释放对象锁
+4. 线程调用两个方法都是进入 TIMED-WAITING 状态
+
+
+
+### 同步模式之保护性暂停
+
+用在一个线程等待另一个线程的执行结果
+
+要点：
+
+* 有一个结果需要从一个线程传递到另一个线程，让它们关联同一个 GuardedObject
+* 如果有结果不断从一个线程到另一个线程那么可以使用消息队列（见生产者/消费者）
+* JDK 中，join 的实现、Future 的实现，采用的就是此模式
+* 因为要等待另一方的结果，因此归类为同步模式
+
+![](https://raw.githubusercontent.com/whn961227/images/master/data/20200720104813.png)
+
+```java
+class GuardedObject {
+    // 结果
+    private Object response;
+
+    // 获取结果
+    // timeout 表示等待时长
+    public Object get(long timeout){
+        synchronized (this) {
+            // 开始时间
+            long begin = System.currentTimeMillis();
+            // 经历时间
+            long passedTime = 0;
+            // 没有结果
+            while (response == null) {
+                // 这轮时间应该等待的时间
+                long waitTime = timeout - passedTime;
+                // 经历时间超过了最大等待时间，退出循环
+                if (waitTime <= 0)
+                    break;
+                try {
+                    this.wait(waitTime);
+                } catch (InterruptedException e) {
+                    e.printStackTrace();
+                }
+                // 求得经历时间
+                passedTime = System.currentTimeMillis() - begin;
+            }
+            return response;
+        }
+    }
+
+    // 生产结果
+    public void complete(Object response) {
+        synchronized (this) {
+            // 给结果成员变量赋值
+            this.response = response;
+            this.notifyAll();
+        }
+    }
+}
+```
+
+### 保护性暂停 - 扩展
+
+```java
+class People extends Thread {
+    @Override
+    public void run() {
+        // 收信
+        GuardedObject guardedObject = Mailboxes.createGuardedObject();
+        System.out.println("开始收信 id：" + guardedObject.getId());
+        Object mail = guardedObject.get(5000);
+        System.out.println("收到信 id：" + guardedObject.getId() + "， 内容：" + mail);
+    }
+}
+
+class Postman extends Thread {
+    private int id;
+    private String mail;
+
+    public Postman(int id, String mail) {
+        this.id = id;
+        this.mail = mail;
+    }
+
+    @Override
+    public void run() {
+        GuardedObject guardedObject = Mailboxes.getGuardedObject(id);
+        System.out.println("开始送信 id：" + id + "，内容：" + mail);
+        guardedObject.complete(mail);
+    }
+}
+
+class Mailboxes {
+    private static Map<Integer, GuardedObject> boxes = new Hashtable<>();
+
+    private static int id = 1;
+    // 产生唯一id
+    private static synchronized int generateId() {
+        return id++;
+    }
+
+    public static GuardedObject getGuardedObject(int id) {
+        return boxes.remove(id);
+    }
+
+    public static GuardedObject createGuardedObject() {
+        GuardedObject go = new GuardedObject(generateId());
+        boxes.put(go.getId(), go);
+        return go;
+    }
+
+    public static Set<Integer> getIds() {
+        return boxes.keySet();
+    }
+}
+
+class GuardedObject {
+
+    // 标识 GuardedObject
+    private int id;
+
+    public GuardedObject(int id) {
+        this.id = id;
+    }
+
+    public int getId() {
+        return id;
+    }
+
+    // 结果
+    private Object response;
+
+    // 获取结果
+    // timeout 表示等待时长
+    public Object get(long timeout){
+        synchronized (this) {
+            // 开始时间
+            long begin = System.currentTimeMillis();
+            // 经历时间
+            long passedTime = 0;
+            // 没有结果
+            while (response == null) {
+                // 这轮时间应该等待的时间
+                long waitTime = timeout - passedTime;
+                // 经历时间超过了最大等待时间，退出循环
+                if (waitTime <= 0)
+                    break;
+                try {
+                    this.wait(waitTime);
+                } catch (InterruptedException e) {
+                    e.printStackTrace();
+                }
+                // 求得经历时间
+                passedTime = System.currentTimeMillis() - begin;
+            }
+            return response;
+        }
+    }
+
+    // 生产结果
+    public void complete(Object response) {
+        synchronized (this) {
+            // 给结果成员变量赋值
+            this.response = response;
+            this.notifyAll();
+        }
+    }
+}
+```
+
+
+
+### 异步模式之生产者/消费者
+
+要点：
+
+* 与前面的保护性暂停中的 GuardObject 不同，不需要产生结果和消费结果的线程一一对应
+* 消费队列可以用来平衡生产和消费的线程资源
+* 生产者仅负责产生结果数据，不关心数据该如何处理，而消费者专心处理结果数据
+* 消息队列是有容量限制的，满时不会再加入数据，空时不会再消耗数据
+* JDK 中各种阻塞队列，采用的就是这种模式
+
+```java
+// 消息队列类，java 线程之间通信
+class MessageQueue {
+    // 消息的队列集合
+    private LinkedList<Message> list = new LinkedList<>();
+    // 队列容量
+    private int capacity;
+
+    public MessageQueue(int capacity) {
+        this.capacity = capacity;
+    }
+
+    // 获取消息
+    public Message take() {
+        // 检查队列是否为空
+        synchronized (list) {
+            while (list.isEmpty()) {
+                try {
+                    list.wait();
+                } catch (InterruptedException e) {
+                    e.printStackTrace();
+                }
+            }
+            // 从队列头部获取消息返回
+            Message message = list.removeFirst();
+            list.notifyAll();
+            return message;
+        }
+    }
+
+    // 存入消息
+    public void put(Message message) {
+        synchronized (list) {
+            while (list.size() == capacity) {
+                try {
+                    list.wait();
+                } catch (InterruptedException e) {
+                    e.printStackTrace();
+                }
+            }
+            // 将消息加入队列尾部
+            list.addLast(message);
+            list.notifyAll();
+        }
+    }
+}
+
+final class Message {
+    private int id;
+    private Object value;
+
+    public Message(int id, Object value) {
+        this.id = id;
+        this.value = value;
+    }
+
+    public int getId() {
+        return id;
+    }
+
+    public Object getValue() {
+        return value;
+    }
+
+    @Override
+    public String toString() {
+        return "Message{" +
+                "id=" + id +
+                ", value=" + value +
+                '}';
+    }
+}
+```
 
 
 
@@ -478,33 +743,35 @@ LockSupport.unpark(); // 恢复某个线程的运行
 
 **与Object的wait与notify相比**
 
-* wait，notify和notifyAll必须配合Object Monitor一起使用，而park，unpark不必
-* park与unpark是以线程为单位来 **阻塞** 和 **唤醒** 线程，而notify只能随机唤醒一个等待线程，notifyAll是唤醒所有等待线程
-* park与unpark可以先unpark，而wait与notify不能先notify
+* wait，notify 和 notifyAll 必须配合 Object Monitor 一起使用，而 park，unpark不必
+* park 与 unpark 是以线程为单位来 **阻塞** 和 **唤醒** 线程，而 notify 只能随机唤醒一个等待线程，notifyAll 是唤醒所有等待线程
+* park 与 unpark 可以先 unpark，而 wait 与 notify 不能先 notify
 
 #### 原理之park & unpark
 
+每个线程都有自己的一个 Parker 对象，由三部分组成 `_counter`，`_cond`，`_mutex`
+
 <img src="https://raw.githubusercontent.com/whn961227/images/master/data/20200714164718.png" style="zoom: 25%;" />
 
-1. 当前线程调用Unsafe.park()方法
-2. 检查 _counter，本情况为0，这时，获得 _mutex 互斥锁
+1. 当前线程调用 Unsafe.park() 方法
+2. 检查 _counter，本情况为 0，这时，获得 _mutex 互斥锁
 3. 线程进入 _cond 条件变量阻塞
 4. 设置 _counter=0
 
 <img src="https://raw.githubusercontent.com/whn961227/images/master/data/20200714165624.png" style="zoom: 25%;" />
 
-1. 调用Unsafe.unpark(Thread_0)方法，设置 _counter 为1
+1. 调用 Unsafe.unpark(Thread_0) 方法，设置 _counter 为 1
 
-2. 唤醒 _cond 条件变量中的Thread_0
-3. Thread_0恢复运行
-4. 设置 _counter 为1
+2. 唤醒 _cond 条件变量中的 Thread_0
+3. Thread_0 恢复运行
+4. 设置 _counter 为 0
 
 <img src="https://raw.githubusercontent.com/whn961227/images/master/data/20200714165926.png" style="zoom:25%;" />
 
-1. 调用Unsafe.unpark(Thread_0)方法，设置_counter为1
-2. 当前线程调用Unsafe.park()方法
-3. 检查_counter，本情况为1，这时线程无需阻塞，继续运行
-4. 设置_counter为0
+1. 调用 Unsafe.unpark(Thread_0) 方法，设置 _counter 为1
+2. 当前线程调用 Unsafe.park() 方法
+3. 检查 _counter，本情况为 1，这时线程无需阻塞，继续运行
+4. 设置 _counter 为 0
 
 
 
@@ -555,7 +822,7 @@ t2.start();
 
 #### 定位死锁
 
-* 检测死锁可以使用jconsole工具，或者使用jps定位进程id，再用jstack定位死锁
+* 检测死锁可以使用 jconsole 工具，或者使用 jps 定位进程 id，再用 jstack 定位死锁
 
 #### 活锁
 
@@ -591,17 +858,21 @@ try {
 
 #### 可重入
 
-可重入是指同一个线程如果首次获得了这把锁，那么因为它是这把锁的拥有者，因此有权利再次获得这把锁
+**可重入** 是指同一个线程如果首次获得了这把锁，那么因为它是这把锁的拥有者，因此有权利再次获得这把锁
 
-如果是不可重入锁，那么第二次获得锁时，自己也会被挡住
+如果是 **不可重入锁**，那么第二次获得锁时，自己也会被挡住
 
 #### 可打断
+
+停止无限制等待，被动
 
 ```java
 reentrantLock.lockInterruptibly();
 ```
 
 #### 锁超时
+
+主动
 
 ```java
 boolean tryLock()
@@ -614,25 +885,25 @@ ReentrantLock默认是不公平的
 
 #### 条件变量
 
-synchronized中也有条件变量，就是waitSet，当条件不满足时进入waitSet等待
+synchronized 中也有条件变量，就是 waitSet，当条件不满足时进入 waitSet 等待
 
-ReentrantLock的条件变量比synchronized强大之处在于，它支持多个条件变量
+ReentrantLock 的条件变量比 synchronized 强大之处在于，它支持多个条件变量
 
-* synchronized是那些不满足条件的线程都在一个waitSet中等待
-* 而ReentrantLock支持多个condition，唤醒时是按照condition来唤醒
+* synchronized 是那些不满足条件的线程都在一个waitSet 中等待
+* 而 ReentrantLock 支持多个 condition，唤醒时是按照 condition 来唤醒
 
 使用流程
 
-* await前需要获得锁
-* await执行后，会释放锁，进入conditionObject等待
-* await的线程被唤醒(signal()、signalAll())（或打断、或超时）去重新竞争lock锁
-* 竞争lock锁成功后，从await后继续执行
+* await 前需要获得锁
+* await 执行后，会释放锁，进入 conditionObject 等待
+* await 的线程被唤醒(signal()、signalAll())（或打断、或超时）去重新竞争 lock 锁
+* 竞争 lock 锁成功后，从 await 后继续执行
 
 
 
 ### 设计模式-固定运行顺序
 
-#### wait&notify
+#### wait & notify
 
 ```java
 /**
@@ -668,7 +939,7 @@ public static void main(String[] args) {
 }
 ```
 
-#### await&signal
+#### await & signal
 
 ```java
 /**
@@ -709,7 +980,7 @@ public static void main(String[] args) {
 }
 ```
 
-#### park&unpark
+#### park & unpark
 
 ```java
 Thread t1 = new Thread(()->{
@@ -730,7 +1001,7 @@ t2.start();
 
 ### 设计模式-交替输出
 
-#### wait&notify
+#### wait & notify
 
 ```java
 /**
@@ -777,7 +1048,7 @@ public class Test {
 }
 ```
 
-#### await&signal
+#### await & signal
 
 ```java
 public class Test {
@@ -827,7 +1098,7 @@ class Awaitsignal extends ReentrantLock {
 }
 ```
 
-#### park&unpark
+#### park & unpark
 
 ```java
 public class Test {
@@ -874,7 +1145,12 @@ class ParkUnpark {
 
 
 
-### Volatile
+### Volatile原理
+
+volatile 的底层实现原理是内存屏障
+
+* 对 volatile 变量的写指令后会加入写屏障
+* 对 volatile 变量的读指令前会加入读屏障
 
 用来修饰成员变量和静态成员变量，可以避免线程从自己的工作缓存中查找变量的值，必须到主存中获取值，线程操作volatile变量都是直接操作主存
 
@@ -890,7 +1166,7 @@ class ParkUnpark {
 
 #### 如何保证可见性
 
-* 写屏障保证在该屏障之前的，对共享变量的改动，都同步到主存中
+* 写屏障保证在该屏障之前，对共享变量的改动，都同步到主存中
 * 读屏障保证在该屏障之后，对共享变量的读取，加载的是主存中的最新数据
 
 #### 如何保证有序性
@@ -921,6 +1197,89 @@ class ParkUnpark {
 
 
 
+### 设计模式 - 两阶段终止 - volatile
+
+```java
+class TwoPhaseTermination {
+    private Thread monitor;
+    private volatile boolean stop = false;
+
+    // 启动监控线程
+    public void start() {
+        monitor = new Thread(() -> {
+            while (true) {
+                Thread thread = Thread.currentThread();
+                if (stop) {
+                    System.out.println("料理后事...");
+                    break;
+                }
+                try {
+                    Thread.sleep(1000); // 打断情况 1
+                    System.out.println("执行监控记录"); // 打断情况 2
+                } catch (InterruptedException e) {
+                    e.printStackTrace();
+                }
+            }
+        });
+        monitor.start();
+    }
+
+    // 停止监控线程
+    public void stop() {
+        stop = true;
+        monitor.interrupt();
+    }
+}
+```
+
+
+
+### 设计模式 - 犹豫模式
+
+Balking（犹豫）模式用在一个线程发现另一个线程或本线程已经做了某一件相同的事，那么本线程就无需再做了，直接结束返回
+
+```java
+class TwoPhaseTermination {
+    private Thread monitor;
+    private volatile boolean stop = false;
+    // 判断是否执行过 start 方法
+    private boolean starting = false;
+
+    // 启动监控线程
+    public void start() {
+        synchronized (this) {
+            if(starting)
+                return;
+            starting = true;
+        }
+        monitor = new Thread(() -> {
+            while (true) {
+                Thread thread = Thread.currentThread();
+                if (stop) {
+                    System.out.println("料理后事...");
+                    break;
+                }
+                try {
+                    Thread.sleep(1000); // 打断情况 1
+                    System.out.println("执行监控记录"); // 打断情况 2
+                } catch (InterruptedException e) {
+                    e.printStackTrace();
+                }
+            }
+        });
+        monitor.start();
+    }
+
+    // 停止监控线程
+    public void stop() {
+        stop = true;
+        monitor.interrupt();
+    }
+}
+```
+
+
+
 ### JMM（Java内存模型）
 
 所有的共享变量都存储于主内存，每一个线程有自己的工作内存，线程的工作内存，保留了被线程使用的变量的工作副本
@@ -939,21 +1298,62 @@ class ParkUnpark {
 
 * **加锁**
 
-  某一个线程进入synchronized代码块前后，线程会获得锁，清空工作内存，从主内存拷贝共享变量最新的值到工作内存中成为副本，执行代码，将修改后的副本的值刷新回主内存中，线程释放锁
+  某一个线程进入 synchronized 代码块前后，线程会获得锁，**清空工作内存**，从主内存拷贝共享变量最新的值到工作内存中成为副本，执行代码，将修改后的副本的值刷新回主内存中，线程释放锁
 
   而获取不到锁的线程会阻塞等待，所以变量的值肯定一直都是最新的
 
-* **Volatile修饰共享变量**
+* **Volatile 修饰共享变量**
 
   每个线程操作数据的时候会把数据从主内存读取到自己的工作内存，如果操作了数据并且写回了，其他已经读取的线程的变量副本就失效了
 
 
 
+### double-checked locking 问题
+
+```java
+public final class Singleton {
+    private Singleton() {}
+    private static Singleton INSTANCE = null;
+    public static Singleton getInstance() {
+        // 实例没创建，才会进入内部的 synchronized 代码块
+        if (INSTANCE == null) {
+            // 首次访问会同步，之后的使用没有 synchronized
+            synchronized (Singleton.class) {
+                // 也许有其他线程已经创建实例，所以再判断一次
+                if (INSTANCE == null) 
+                    INSTANCE = new Singleton();
+            }
+        }
+        return INSTANCE;
+    }
+}
+```
+
+以上的实现特点是：
+
+* 懒惰实例化
+* 首次使用 getInstance() 才使用 synchronized 加锁，后续使用时无需加锁
+* 关键的一点：第一个 if 使用了 INSTANCE 变量，是在同步块之外
+
+#### 加 volatile 关键字
+
+```java
+public final class Singleton {
+    private Singleton() {}
+    private static volatile Singleton INSTANCE = null;
+    public static Singleton getInstance() {
+        // ....
+    }
+}
+```
+
+
+
 ### Happens-before
 
-规定了对共享变量的写操作对其他线程的读操作可见，它是可见性与有序性的一套规则总结，抛开以下happens-before规则 ，JMM并不能保证一个线程对共享变量的写，对于其他线程对该共享变量的读可见
+Happens-before 规定了对共享变量的写操作对其他线程的读操作可见，它是可见性与有序性的一套规则总结，抛开以下 happens-before 规则 ，JMM 并不能保证一个线程对共享变量的写，对于其他线程对该共享变量的读可见
 
-* 线程解锁m之前对变量的写，对于接下来对m加锁的其他线程对该变量的读可见
+* 线程解锁 m 之前对变量的写，对于接下来对 m 加锁的其他线程对该变量的读可见
 
   ```java
   static int x;
@@ -972,7 +1372,7 @@ class ParkUnpark {
   },"t2").start();
   ```
 
-* 线程对volatile变量的写，对接下来其他线程对该变量的读可见
+* 线程对 volatile 变量的写，对接下来其他线程对该变量的读可见
 
   ```java
   volatile static int x;
@@ -986,7 +1386,7 @@ class ParkUnpark {
   }, "t2").start();
   ```
 
-* 线程start前对变量的写，对该线程开始后对该变量的读可见
+* 线程 start 前对变量的写，对该线程开始后对该变量的读可见
 
   ```java
   static int x;
