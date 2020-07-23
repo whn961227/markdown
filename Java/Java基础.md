@@ -497,3 +497,255 @@ NIO 的核心在于：通道（Channel）和缓冲区（Buffer）。通道表示
 #### 缓冲区（Buffer）
 
 * 缓冲区（Buffer）：一个用于特定基本数据类型的容器。有 java.nio 包定义的，所有缓冲区都是 Buffer 抽象类的子类
+
+* Java NIO 中的 Buffer 主要用于与 NIO 通道进行交互，数据是从通道读入缓冲区，从缓冲区写入通道中的
+
+```java
+/**
+ * 一. 缓冲区（Buffer）：在 Java NIO 中负责数据的存取。缓冲区就是数组，用于存储不同数据类型的数据
+ * 
+ * 根据数据类型的不同（boolean 除外），提供了相应类型的缓冲区：
+ * ByteBuffer CharBuffer ShortBuffer IntBuffer LongBuffer FloatBuffer DoubleBuffer
+ * 通过 allocate() 获取缓冲区
+ *
+ * 二. 缓冲区存取数据的两个核心方法：
+ * put()：存入数据到缓冲区
+ * get()：获取缓冲区中的数据
+ * 
+ * 三. 缓冲区中的四个核心属性
+ * capacity：容量，表示缓冲区中最大存储数据的容量。一旦声明不能改变
+ * limit：界限，表示缓冲区中可以操作数据的大小。（limit 后数据不能进行读写）
+ * position：位置，表示缓冲区中正在操作数据的位置
+ *
+ * mark：标记，表示记录当前 position 的位置，可以通过 reset() 恢复到 mark 位置
+ * 
+ * 0 <= mark <= position <= limit <= capacity
+ * 
+ * 四. 直接缓冲区和非直接缓冲区
+ * 非直接缓冲区：通过 allocate() 方法分配缓冲区，将缓冲区建立在 JVM 的内存中
+ * 直接缓冲区：通过 allocateDirect() 方法分配直接缓冲区，将缓冲区建立在物理内存中，可以提高效率
+ */
+public class TestBuffer {
+    public void test() {
+        String str = "abcde";
+        
+        // 1.分配一个指定大小的缓冲区
+        ByteBuffer buf = ByteBuffer.allocate(1024);
+        
+        // 2.利用 put() 存入数据到缓冲区中
+        buf.put(str.getBytes());
+        
+        // 3. 切换读取数据模式
+        buf.flip();
+        
+        // 4.利用 get() 读取缓冲区中的数据
+        byte[] dst = new byte[buf.limit()];
+        buf.get(dst);
+        System.out.println(new String(dst, 0, dst.length));
+        
+        // 5.rewind()：可重复读数据
+        buf.rewind();
+        
+        // 6.clear()：清空缓冲区，但是缓冲区的数据依然存在，但是处于“被遗忘”状态
+        buf.clear();
+    }
+}
+```
+
+##### 非直接缓冲区
+
+<img src="https://raw.githubusercontent.com/whn961227/images/master/data/20200723214016.png" style="zoom: 67%;" />
+
+##### 直接缓冲区
+
+<img src="https://raw.githubusercontent.com/whn961227/images/master/data/20200723214342.png" style="zoom:67%;" />
+
+效率高，但是分配和销毁需要消耗较大资源；不易控制
+
+建议将直接缓冲区主要分配给那些易受基础系统的本机 I/O 操作影响的大型、持久的缓冲区
+
+#### 通道（Channel）
+
+* 通道（Channel）：由 java.nio.channels 包定义的。Channel 表示 IO 源与目标打开的连接。Channel 类似于传统的“流”，只不过 Channel 本身不能直接访问数据，Channel 只能与 Buffer 进行交互
+
+<img src="https://raw.githubusercontent.com/whn961227/images/master/data/20200723215911.png" style="zoom:67%;" />
+
+```java
+/**
+ * 一. 通道（Channel）：用于源节点与目标节点的连接。在 Java NIO 中负责缓冲区中数据的传输。Channel 本身不存储数据，因此需要配合缓冲区进行传输
+ * 
+ * 二. 通道的主要实现类
+ * java.nio.channels.Channel 接口：
+ * 		|--FileChannel
+ * 		|--SocketChannel
+ * 		|--ServerSocketChannel
+ * 		|--DatagramChannel
+ *
+ * 三. 获取通道
+ * 1. Java 针对支持通道的类提供了 getChannel() 方法
+ *		本地 IO：
+ *		FileInputStream / FileOutputStream
+ *		RandomAccessFile
+ *
+ *		网络 IO：
+ * 		Socket
+ *		ServerSocket
+ *		DatagramSocket
+ * 2. 在 JDK 1.7 中的 NIO.2 针对各个通道提供了静态方法 open()
+ * 3. 在 JDK 1.7 中的 NIO.2 的 Files 工具类的 newByteChannel() 
+ *
+ * 四. 通道之间的数据传输
+ * transferFrom()
+ * transferTo()
+ *
+ * 五. 分散（Scatter）与聚集（Gather）
+ * 分散读取（Scattering Reads）：将通道中的数据分散到多个缓冲区中
+ * 聚集写入（Gathering Writes）：将多个缓冲区中的数据聚集到通道中
+ *
+ * 六. 字符集：Charset
+ * 编码：字符串 -> 字节数组
+ * 解码：字节组数 -> 字符串
+ */
+public class TestChannel {
+    // 1.利用通道完成文件的复制（非直接缓冲区）
+    public void test() {
+        FileInputStream fis = null;
+        FileOutputStream fos = null
+        // 获取通道
+        FileChannel inChannel = null;
+        FileChannel outChannel = null;
+        try {
+            fis = new FileInputStream("1.jpg");
+            fos = new FileOutputStream("2.jpg");
+            inChannel = fis.getChannel();
+            outChannel = fos.getChannel();
+            // 2) 分配指定大小的缓冲区
+            ByteBuffer buf = ByteBuffer.allocate(1024);
+            // 3) 将通道中的数据存入缓冲区
+            while(inChannel.read(buf) != -1) {
+                buf.flip(); // 切换读取数据模式
+                // 4) 将缓冲区中的数据写入通道中
+                outChannel.write(buf);
+                buf.clear(); // 清空缓冲区
+            }
+        } catch (IOException e) {
+            e.printStackTrace();
+        } finally {
+            if (outChannel != null) {
+                try {
+                    outChannel.close();
+                } catch (IOException e) {
+                    e.printStackTrace();
+                }
+            }
+            if (inChannel != null) {
+                try {
+                    inChannel.close();
+                } catch (IOException e) {
+                    e.printStackTrace();
+                }
+            }
+            if (fos != null) {
+                try {
+                    fos.close();
+                } catch (IOException e) {
+                    e.printStackTrace();
+                }
+            }
+            if (fis != null) {
+                try {
+                    fis.close();
+                } catch (IOException e) {
+                    e.printStackTrace();
+                }
+            }
+        }
+    }
+    
+    // 2. 使用直接缓冲区完成文件的复制（内存映射文件）
+    public void test() throws IOException {
+        FileChannel inChannel = FileChannel.open(Paths.get("1.jpg"), StandardOpenOption.READ);
+        FileChannel outChannel = FileChannel.open(Paths.get("2.jpg"), StandardOpenOption.WRITE, StandardOpenOption.READ, StandardOpenOption.CREATE_NEW);
+        // 内存映射文件
+        MappedByteBuffer inMappedBuf = inChannel.map(MapMode.READ_ONLY, 0, inChannel.size());
+        MappedByteBuffer outMappedBuf = outChannel.map(MapMode.READ_WRITE, 0, inChannel.size());
+        // 直接对缓冲区进行数据的读写操作
+        byte[] dst = new byte[inMappedBuf.limit()];
+        inMappedBuf.get(dst);
+        outMappedBuf.put(dst);
+        
+        inChannel.close();
+        outChannel.close();
+    }
+    
+    // 通道之间的数据传输（直接缓冲区）
+     public void test() throws IOException {
+         FileChannel inChannel = FileChannel.open(Paths.get("1.jpg"), StandardOpenOption.READ);
+        FileChannel outChannel = FileChannel.open(Paths.get("2.jpg"), StandardOpenOption.WRITE, StandardOpenOption.READ, StandardOpenOption.CREATE_NEW);
+         
+         inChannel.transferTo(0, inChannel.size(), outChannel);
+         // outChannel.transferFrom(inChannel, 0, inChannel.size());
+         
+         inChannel.close();
+         outChannel.close();
+     }
+    
+    // 分散和聚集
+    public void test() throws IOException {
+        RandomAccessFile raf1 = new RandomAccessFile("1.txt", "rw");
+        
+        // 1. 获取通道
+        FileChannel channel1 = raf1.getChannel();
+        
+        // 2. 分配指定大小的缓冲区
+        ByteBuffer buf1 = ByteBuffer.allocate(100);
+        ByteBuffer buf2 = ByteBuffer.allocate(1024);
+        
+        // 3. 分散读取
+        ByteBuffer[] bufs = {buf1, buf2};
+        channel1.read(bufs);
+        
+        // 4. 聚集写入
+        RandomAccessFile raf2 = new RandomAccessFile("2.txt", "rw");
+        FileChannel channel2 = raf2.getChannel();
+        
+        channel2.write(bufs);
+    }
+    
+    // 字符集
+    public void test() {
+        Charset cs1 = Charset.forName("GBK");
+        
+        // 获取编码器
+        CharsetEncoder ce = cs1.newEncoder();
+        // 获取解码器
+        CharsetDecoder cd = cs1.newDecoder();
+        
+        CharBuffer cBuf = CharBuffer.allocate(1024);
+        cBuf.put("威武！");
+        cBuf.flip();
+        
+        // 编码
+        ByteBuffer bBuf = ce.encode(cBuf);
+        
+        // 解码
+        bBuf.flip();
+        CharBuffer cBuf2 = cd.decode(bBuf);
+    }
+}
+```
+
+#### 分散（Scatter）和聚集（Gather）
+
+* 分散读取（Scattering Reads）是指从 Channel 中读取的数据“分散”到多个 Buffer 中
+
+> 注意：按照缓冲区的顺序，从 Channel 中读取的数据依次将 Buffer 填满
+
+<img src="https://raw.githubusercontent.com/whn961227/images/master/data/20200723225113.png" style="zoom: 67%;" />
+
+* 聚集写入（Gathering Writes）是指将多个 Buffer 中的数据“聚集”到 Channel
+
+> 注意：按照缓冲区的顺序，写入 position 和 limit 之间的数据到 Channel
+
+<img src="https://raw.githubusercontent.com/whn961227/images/master/data/20200723225334.png" style="zoom:67%;" />
+
