@@ -673,7 +673,7 @@ public class TestChannel {
         byte[] dst = new byte[inMappedBuf.limit()];
         inMappedBuf.get(dst);
         outMappedBuf.put(dst);
-        
+        // 关闭通道
         inChannel.close();
         outChannel.close();
     }
@@ -748,4 +748,343 @@ public class TestChannel {
 > 注意：按照缓冲区的顺序，写入 position 和 limit 之间的数据到 Channel
 
 <img src="https://raw.githubusercontent.com/whn961227/images/master/data/20200723225334.png" style="zoom:67%;" />
+
+#### NIO 网络通信
+
+##### 阻塞式
+
+```java
+/**
+ * 一. 使用 NIO 完成网络通信的三个核心：
+ * 1. 通道（Channel）: 负责连接
+ * 			java.nio.channels.Channel 接口：
+ * 				|--SelectableChannel
+ *					|--SocketChannel
+ *					|--ServerSocketChannel
+ *					|--DatagramChannel
+ *					
+ *					|--Pipe.SinkChannel
+ *					|--Pipe.SourceChannel
+ * 2. 缓冲区（Buffer）：负责数据的存取
+ * 3. 选择器（Selector）：是 SelectableChannel 的多路复用器，用于监控 SelectableChannel 的 IO 状况
+ * 
+ */
+public class TestBlockingNIO {
+    // 客户端
+    public void client() throws IOException {
+        // 1. 获取通道
+        SocketChannel sChannel = SocketChannel.open(new InetSocketAddress("127.0.0.1", 9898));
+
+        FileChannel inChannel = FileChannel.open(Paths.get("1.jpg"), standardOpenOption.READ);
+
+        // 2. 分配指定大小的缓冲区
+        ByteBuffer buf = ByteBuffer.allocate(1024);
+
+        // 3. 读取本地文件，并发送到服务器
+        while (inChannel.read(buf) != -1) {
+            buf.flip();
+            sChannel.write(buf);
+            buf.clear();
+        }
+
+        // 4. 关闭通道
+        inChannel.close();
+        sChannel.close();
+    }
+    
+    // 服务端
+    public void server() throws IOException{
+        // 1. 获取通道
+        ServerSocketChannel ssChannel = ServerSocketChannel.open();
+        
+        FileChannel outChannel = FileChannel.open(Paths.get("2.jpg"), StandardOpenOption.WRITE, StandardOpenOption.CREATE)
+        
+        // 2. 绑定连接
+        ssChannel.bind(new InetSocketAddress(9898));
+        
+        // 3. 获取客户端连接的通道
+        SocketChannel sChannel = ssChannel.accept();
+        
+        // 4. 分配指定大小的缓冲区
+        ByteBuffer buf = ByteBuffer.allocate(1024);
+        
+        // 5. 接收客户端的数据，并保存到本地
+        while (sChannel.read(buf) != -1) {
+            buf.flip();
+            outChannel.write(buf);
+            buf.clear();
+        }
+        
+        // 6. 关闭通道
+        sChannel.close();
+        outChannel.close();
+        ssChannel.close();
+    }
+}
+```
+
+##### 非阻塞式
+
+````java
+public class TestNonBlockingNIO {
+    // 客户端
+    public void client() throws IOException{
+        // 1. 获取通道
+        SocketChannel sChannel = SocketChannel.open(new InetSocketAddress("127.0.0.1", 9898));
+        
+        // 2. 切换成非阻塞模式
+        sChannel.configureBlocking(false);
+        
+        // 3. 分配指定大小的缓冲区
+        ByteBuffer buf = ByteBuffer.allocate(1024);
+        
+        // 4. 发送数据给服务端
+        buf.put(new Date().toString().getBytes());
+        buf.flip();
+        sChannel.write(buf);
+        buf.clear();
+        
+        // 5. 关闭通道
+        sChannel.close();
+    }
+    
+    // 服务端
+    public void server() throws IOException{
+        // 1. 获取通道
+        ServerSocketChannel ssChannel = ServerSocketChannel.open();
+        
+        // 2. 切换非阻塞模式
+        ssChannel.configureBlocking(false);
+        
+        // 3. 绑定连接
+        ssChannel.bind(new InetSocketAddress(9898));
+        
+        // 4. 获取选择器
+        Selector selector = Selector.open();
+        
+        // 5. 将通道注册到选择器上，并且指定“监听接收事件”
+        ssChannel.register(selector, SelectionKey.OP_ACCEPT);
+        
+        // 6. 轮询式的获取选择器上已经“准备就绪”的事件
+        while (selector.select() > 0) {
+            // 7. 获取当前选择器中所有注册的“选择键（已就绪的监听事件）”
+            Iterator<Selectionkey> it = selector.selectedKeys().iterator();
+            
+            while (it.hasNext()) {
+                // 8. 获取准备“就绪”的事件
+                SelectionKey sk = it.next();
+                // 9. 判断具体是什么事件准备就绪
+                if (sk.isAcceptable()) {
+                    // 10. 如果“接收就绪”，获取客户端连接
+                    SocketChannel sChannel = ssChannel.accept();
+                    // 11. 切换非阻塞模式
+                    sChannel.configureBlocking(false);
+                    
+                    // 12. 将该通道注册到选择器上
+                    sChannel.register(selector, SelectionKey.OP_READ);
+                } else if (sk.isReadable()) {
+                    // 13. 获取当前选择器上“读就绪”状态的通道
+                    SocketChannel sChannel = (SocketChannel)sk.channel();
+                    // 14. 读取数据
+                    ByteBuffer buf = ByteBuffer.allocate(1024);
+                    
+                    int len = 0
+                    while ((len = sChannel.read(buf)) > 0){
+                        buf.flip();
+                        System.out.println(new String(buf.array(), 0, len));
+                        buf.clear();
+                    }
+                }
+                // 15. 取消选择键 SelectionKey
+                it.remove();
+            }
+        }
+    }
+}
+````
+
+###### SelectionKey
+
+* SelectionKey：表示 SelectableChannel 和 Selector 之间的注册关系。每次向选择器注册通道时就会选择一个事件（选择键）。选择键包含两个表示为整数值的操作集。操作集的每一位都表示该键的通道所支持的一类可选择操作
+
+* 可以监听的事件类型（可使用 SelectionKey 的四个常量表示）：
+
+  * 读：SelectionKey.OP_READ
+  * 写：SelectionKey.OP_WRITE
+  * 连接：SelectionKey.OP_CONNECT
+  * 接收：SelectionKey.OP_ACCEPT
+
+* 若注册时不止监听一个事件，则可以使用“位或”操作符连接
+
+  例：
+
+  ```java
+  int interestSet = SelectionKey.OP_READ | SelectionKey.OP_WRITE;
+  ```
+
+###### UDP
+
+```java
+public class TestNonBlockingNIO {
+    public void send() throws IOException {
+        DatagramChannel dc = DatagramChannel.open();
+        
+        dc.configureBlocking(false);
+        
+        ByteBuffer buf = ByteBuffer.allocate(1024);
+        
+        Scanner scan = new Scanner(System.in);
+        
+        while (scan.hasNext()) {
+            String str = scan.next();
+            buf.put(str.getBytes());
+            buf.flip();
+            dc.send(buf, new InetSocketAddress("127.0.0.1", 9898));
+            buf.clear();
+        }
+        
+        dc.close();
+    }
+    
+    public void receive() throws IOException {
+        DatagramChannel dc = DatagramChannel.open();
+        
+        dc.configureBlocking(false);
+        
+        dc.bind(new InetSocketAddress(9898));
+        
+        Selector selector = Selector.open();
+        
+        dc.register(selector, SelectionKey.OP_READ);
+        
+        while (selector.select() > 0) {
+            Iterator<Selectionkey> it = selector.selectedKeys().iterator();
+            
+            while (it.hasNext()) {
+                SelectionKey sk = it.next();
+                
+                if (sk.isReadable()) {
+                    ByteBuffer buf = ByteBuffer.allocate(1024);
+                    
+                    dc.receive(buf);
+                    buf.flip();
+                    System.out.println(new String(buf.array(), 0, buf.limit()));
+                    buf.clear();
+                }
+            }
+            
+            it.remove();
+        }
+    }
+}
+```
+
+#### 管道（Pipe）
+
+* Java NIO 管道是 2 个线程之间的单向数据连接。Pipe 有一个 source 通道和一个 sink 通道。数据会被写到 sink 通道，从 source 通道获取
+
+<img src="https://raw.githubusercontent.com/whn961227/images/master/data/20200724145742.png" style="zoom:33%;" />
+
+```java
+public class TestPipe {
+    public void test() throws IOException {
+        // 1. 获取通道
+        Pipe pipe = Pipe.open();
+        
+        // 2. 将缓冲区中的数据写入管道
+        ByteBuffer buf = ByteBuffer.allocate(1024);
+        
+        Pipe.SinkChannel sinkChannel = pipe.sink();
+        buf.put("通过单向管道发送数据".getBytes());
+        buf.flip();
+        sinkChannel.write(buf);
+        
+        // 3. 读缓冲区中的数据
+        Pipe.SourceChannel sourceChannel = pipe.source();
+        buf.flip();
+        int len = sourceChannel.read(buf);
+        System.out.println(new String(buf.array(), 0, len));
+        
+        sourceChannel.close();
+        sinkChannel.close();
+    }
+}
+```
+
+
+
+### 反射
+
+Java 反射机制是在运行状态中，对于任意一个类，都能够知道这个类的所有属性和方法；对于任意一个对象，都能够调用它的任意一个方法和属性；这种动态获取的信息以及动态调用对象的方法的功能称为 Java 语言的反射机制
+
+**好处**
+
+* 可以动态创建对象和编译，体现出很大的灵活性
+
+**坏处**
+
+* 对性能有影响。使用反射基本上是一种解释操作，我们可以告诉 JVM，我们希望做什么并且它满足我们的要求。这类操作总是慢于直接执行相同的操作
+
+#### 获取 Class 对象的两种方式
+
+如果我们动态获取到这些信息，我们需要依靠 Class 对象。Class 类对象将一个类的方法、变量等信息告诉运行的程序。Java 提供了两种方式获取 Class 对象：
+
+1. 知道具体类的情况下可以使用：
+
+   ```java
+   Class alunbarClass = TargetOjbect.class;
+   ```
+
+但是我们一般是不知道具体类的，基本都是通过遍历包下面的类来获取 Class 对象
+
+2. 通过 `Class.forName()` 传入类的路径获取：
+
+   ```java
+   Class alunbarClass = Class.forName("cn.javaguide.TargetObject");
+   ```
+
+##### 代码示例
+
+```java
+public class TargetObject {
+    private String value;
+
+    public TargetObject() {
+        this.value = "test";
+    }
+
+    public void publicMethod(String s) {
+        System.out.println("I love " + s);
+    }
+
+    private void privateMethod() {
+        System.out.println("value " + value);
+    }
+}
+
+public class Mytest {
+    public static void main(String[] args) throws ClassNotFoundException, IllegalAccessException, InstantiationException, NoSuchMethodException, InvocationTargetException, NoSuchFieldException {
+        Class<?> targetClass = Class.forName("TargetObject");
+        TargetObject targetObject = (TargetObject) targetClass.newInstance();
+
+        Method[] methods = targetClass.getDeclaredMethods();
+        for (Method method : methods) {
+            System.out.println(method);
+        }
+
+        Method publicMethod = targetClass.getDeclaredMethod("publicMethod", String.class);
+        publicMethod.invoke(targetObject, "trytry");
+
+        Field field = targetClass.getDeclaredField("value");
+        field.setAccessible(true);
+        field.set(targetObject, "javaguide");
+
+        Method privateMethod = targetClass.getDeclaredMethod("privateMethod");
+        privateMethod.setAccessible(true);
+        privateMethod.invoke(targetObject);
+    }
+}
+```
+
+
 
