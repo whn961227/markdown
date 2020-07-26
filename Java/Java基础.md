@@ -1025,9 +1025,9 @@ Java 反射机制是在运行状态中，对于任意一个类，都能够知道
 
 * 对性能有影响。使用反射基本上是一种解释操作，我们可以告诉 JVM，我们希望做什么并且它满足我们的要求。这类操作总是慢于直接执行相同的操作
 
-#### 获取 Class 对象的两种方式
+#### 获取 Class 对象的方式
 
-如果我们动态获取到这些信息，我们需要依靠 Class 对象。Class 类对象将一个类的方法、变量等信息告诉运行的程序。Java 提供了两种方式获取 Class 对象：
+如果我们动态获取到这些信息，我们需要依靠 Class 对象。Class 类对象将一个类的方法、变量等信息告诉运行的程序。Java 提供了几种方式获取 Class 对象：
 
 1. 知道具体类的情况下可以使用：
 
@@ -1042,6 +1042,14 @@ Java 反射机制是在运行状态中，对于任意一个类，都能够知道
    ```java
    Class alunbarClass = Class.forName("cn.javaguide.TargetObject");
    ```
+
+3. 已知某个类的实例，调用该实例的 getClass() 方法获取 Class 对象
+
+   ```java
+   Class alunbarClass = targetObject.getClass();
+   ```
+
+4. 基本内置类型的包装类都有一个 Type 属性
 
 ##### 代码示例
 
@@ -1076,6 +1084,7 @@ public class Mytest {
         publicMethod.invoke(targetObject, "trytry");
 
         Field field = targetClass.getDeclaredField("value");
+        // 不能直接操作私有属性，需要关闭程序的安全检查
         field.setAccessible(true);
         field.set(targetObject, "javaguide");
 
