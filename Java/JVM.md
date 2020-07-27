@@ -1,5 +1,96 @@
 ## JVM
 
+### 运行时数据区
+
+**JDK 1.8 之前：**
+
+<img src="https://raw.githubusercontent.com/whn961227/images/master/data/20200727104854.png" style="zoom: 25%;" />
+
+**JDK 1.8：**
+
+<img src="https://raw.githubusercontent.com/whn961227/images/master/data/20200727105335.png" style="zoom:25%;" />
+
+#### 程序计数器
+
+程序计数器是一块较小的内存空间，可以看作是当前线程所执行的字节码的行号指示器。字节码解释器工作时通过改变这个计数器的值来选取下一条需要执行的字节码指令，分支、循环、跳转、异常处理、线程恢复等功能都需要依赖这个计数器来完成
+
+另外，为了线程切换后能恢复到正确的执行位置，每条线程都需要一个独立的程序计数器，各线程之间计数器互不影响，独立存储，我们称这类内存区域为“线程私有”的内存
+
+> 程序计数器是唯一一个不会出现 OutOfMemoryError 的内存区域，它的生命周期随着线程的创建而创建，随着线程的结束而死亡
+
+#### Java 虚拟机栈
+
+Java 虚拟机栈是线程私有的，它的生命周期与线程相同，描述的是 Java 方法执行的内存模型，每次方法调用的数据都是通过栈传递的
+
+Java 虚拟机栈是由一个个栈帧组成，而每个栈帧中都拥有：局部变量表、操作数栈、动态链接、方法出口等信息
+
+**局部变量表：**主要存放了编译器可知的**基本数据类型**（short int long float double boolean char byte）、**对象引用**（reference类型，不等同于对象本身，可能是指向对象起始地址的引用指针，可能是指向代表对象的句柄或其他与此对象相关的位置）、**returnAddress类型**（指向一条字节码指令的地址）
+
+**操作数栈：**虚拟机把操作数栈作为工作区，大多数指令都要从这里弹出数据，执行运算，然后把结果压回操作数栈。
+
+```java
+begin  
+iload_0    // push the int in local variable 0 onto the stack  
+iload_1    // push the int in local variable 1 onto the stack  
+iadd       // pop two ints, add them, push result  
+istore_2   // pop int, store into local variable 2  
+end  
+    
+//   在这个字节码序列里，前两个指令iload_0和iload_1将存储在局部变量中索引为0和1的整数压入操作数栈中，其后iadd指令从操作数栈中弹出那两个整数相加，再将结果压入操作数栈。第四条指令istore_2则从操作数栈中弹出结果，并把它存储到局部变量区索引为2的位置。
+```
+
+<img src="https://raw.githubusercontent.com/whn961227/images/master/data/20200727171520.png" style="zoom:25%;" />
+
+**动态链接：**符号引用在运行期间转换为直接引用（对比静态链接）
+
+Java 虚拟机栈会出现两种错误：StackOverFlowError 和 OutOfMemoryError
+
+#### 本地方法栈
+
+类似 Java 虚拟机栈，为虚拟机使用到的 Native 方法服务
+
+
+
+### 四种引用
+
+**强引用**
+
+```java
+Object obj = new Object(); // 强引用
+obj = null; //取消强引用
+```
+
+只要强引用在，垃圾收集器永远不会回收被引用的对象。即使当前内存空间不足，JVM 也不会回收它，而是抛出 OutofMemoryError 错误，使程序异常终止。如果想中断强引用和某个对象之间的关联，可以显式地将引用赋值为 null，这样 JVM 在合适的时间就会回收该对象
+
+**软引用**
+
+```java
+SoftReference<String> softName = new SoftReference<>("张三");
+```
+
+在使用软引用时，如果内存的空间足够，软引用就能继续被使用，而不会被垃圾回收器回收；只有在内存空间不足时，软引用才会被垃圾回收器回收
+
+**弱引用**
+
+```java
+WeakReference<String> weakName = new WeakReference<String>("hello");
+```
+
+具有弱引用的对象拥有更短暂的生命周期，在垃圾回收器线程扫描它所管辖的内存区域的过程中，一旦发现了只具有弱引用的对象，不管当前内存空间足够与否，都会回收它的内存。不过，由于垃圾回收器是一个优先级很低的线程，因此不一定会很快发现那些只具有弱引用的对象
+
+**虚引用**
+
+如果一个对象仅持有虚引用，那么它相当于没有引用，在任何时候都可能被垃圾回收器回收
+
+虚引用必须和引用队列关联使用，当垃圾回收器准备回收一个对象时，如果发现它还有虚引用，就会把这个虚引用加入到与之关联的引用队列中。程序可以通过判断引用队列中是否已经加入了虚引用，来了解被引用的对象是否将要被垃圾回收。如果程序发现某个虚引用已经被加入到引用队列，那么就可以在所引用的对象的内存被回收之前采取必要的行动
+
+```java
+ReferenceQueue<String> queue = new ReferenceQueue<String>();
+PhantomReference<String> pr = new PhantomReference<String>(new String("hello"), queue);
+```
+
+
+
 ### 类加载机制
 
 类是在运行期间第一次使用时动态加载的，而不是一次性加载所有类。因为如果一次性加载，那么会占用很多的内存。
@@ -46,7 +137,7 @@ public static int value = 123;
 public static final int value = 123;
 ```
 
-##### 解析
+##### 解析（静态链接）
 
 解析阶段是虚拟机将常量池内的 **符号引用** 替换为 **直接引用** 的过程。
 

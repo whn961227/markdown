@@ -2263,3 +2263,170 @@ Thread-1 释放锁，进入 unlock 流程
 
 循环栅栏，用来进行线程协作，等待线程满足某个计数。构造时设置 **计数个数**，每个线程执行到某个需要 **同步** 的时刻调用 await() 方法进行等待，当等待的线程数满足 **计数个数** 时，继续执行
 
+
+
+### ThreadLocal
+
+**作用：**主要是做数据隔离，填充的数据只属于当前线程，变量的数据对别的线程而言是相对隔离的，在多线程环境下，防止自己的变量被其他线程篡改
+
+**应用场景**
+
+Spring 采用 Threadlocal 的方式，来保证单个线程中的数据库操作使用的是同一个数据库连接，同时，采用这种方式可以使业务层使用事务时不需要感知并管理 connection 对象，通过传播级别，巧妙地管理多个事务配置之间的切换，挂起和恢复
+
+#### 底层原理
+
+每个线程 Thread 都维护了自己的 threadLocals 变量，所以在每个线程创建 ThreadLocal 的时候，实际上数据是存在自己线程 Thread 的 threadLocals 变量里面的，其他线程没法拿到，从而实现了隔离
+
+##### ThreadLocalMap 底层结构
+
+既然有个 Map 那他的数据结构其实是很像 HashMap 的，但是看源码可以发现，它并未实现 Map 接口，而且他的 Entry 是继承 WeakReference（弱引用）的，也没有看到 HashMap 中的 next，所以不存在链表
+
+<img src="https://raw.githubusercontent.com/whn961227/images/master/data/20200727101052.png" style="zoom: 25%;" />
+
+**为什么需要数组？没有链表如何解决 Hash 冲突**
+
+用数组是因为我们开发过程中一个线程可以有多个 ThreadLocal 来存放不同类型的对象，但是它们都将放到你当前线程的 ThreadLocalMap 里，所以肯定要数组来存
+
+ThreadLocalMap 在存储的时候会给每一个 ThreadLocal 对象一个 threadLocalHashCode，在插入过程中，根据 ThreadLocal 对象的 hash 值，定位到 table 中的位置 i，`int i = key.threadLocalHashCode & (len-1)`
+
+然后会判断一下：如果当前位置为空，就初始化一个 Entry 对象放在位置 i 上
+
+```java
+if (k == null) {
+    replaceStaleEntry(key, value, i);
+    return;
+}
+```
+
+如果位置 i 不为空，如果这个 Entry 对象的 key 正好是即将设置的 key，那么就刷新 Entry 中的 value
+
+```java
+if (k == key) {
+    e.value = value;
+    return;
+}
+```
+
+如果位置 i 不为空，而且 key 不等于 entry，那就找下一个空位置，直到为空为止
+
+<img src="https://raw.githubusercontent.com/whn961227/images/master/data/20200727103238.png" style="zoom:33%;" />
+
+这样的话，在 get 的时候，也会根据 ThreadLocal 对象的 hash 值，定位到 table 中的位置，然后判断该位置 Entry 对象中的 key 是否和 get 的 key 一致，如果不一致，就判断下一位置，set 和 get 如果冲突严重的话，效率很低
+
+```java
+private Entry getEntry(ThreadLocal<?> key) {
+    int i = key.threadLocalHashCode & (table.length - 1);
+    Entry e = table[i];
+    if (e != null && e.get() == key)
+        return e;
+    else
+        return getEntryAfterMiss(key, i, e);
+}
+
+private Entry getEntryAfterMiss(ThreadLocal<?> key, int i, Entry e) {
+    Entry[] tab = table;
+    int len = tab.length;
+
+    // get 的时候一样是根据 ThreadLocal 获取到 table 的 i 值，然后查找数据拿到后会对比 key 是否相等，if (e != null && e.get() == key)
+    while (e != null) {
+        ThreadLocal<?> k = e.get();
+        // 相等就直接返回，不相等就继续查找，找到相等位置
+        if (k == key)
+            return e;
+        if (k == null)
+            expungeStaleEntry(i);
+        else
+            i = nextIndex(i, len);
+        e = tab[i];
+    }
+    return null;
+}
+```
+
+**如果想共享线程 ThreadLocal 数据怎么办**
+
+使用 InheritableThreadLocal 可以实现多个线程访问 ThreadLocal 的值，我们在主线程中创建一个 InheritableThreadLocal 的实例，然后在子线程中得到这个 InheritableThreadLocal 实例设置的值
+
+```java
+public class Mytest {
+    public static void main(String[] args){
+        final ThreadLocal<String> threadLocal = new InheritableThreadLocal<>();
+        threadLocal.set("test");
+        Thread thread = new Thread(() -> {
+            System.out.println("子线程：" + threadLocal.get());
+        });
+        thread.start();
+    }
+}
+```
+
+**如何实现传递**
+
+```java
+ if (inheritThreadLocals && parent.inheritableThreadLocals != null)
+            this.inheritableThreadLocals =
+                ThreadLocal.createInheritedMap(parent.inheritableThreadLocals);
+```
+
+如果线程的 inheritThreadLocals 变量不为空，而且父线程的 inheritThreadLocals 也存在，那么就把父线程的 inheritThreadLocals 给当前线程的 inheritThreadLocals
+
+#### 存在问题
+
+**内存泄露**
+
+ThreadLocal 在保存的时候会把自己当作 key 存在 ThreadLocalMap 中，正常情况应该是 key 和 value 都应该被外界强引用才对，但是现在 key 被设计成 WeakReference 弱引用了
+
+<img src="https://raw.githubusercontent.com/whn961227/images/master/data/20200727115823.png" style="zoom: 33%;" />
+
+**弱引用**
+
+>具有弱引用的对象拥有更短暂的生命周期，在垃圾回收器线程扫描它所管辖的内存区域的过程中，一旦发现了只具有弱引用的对象，不管当前内存空间足够与否，都会回收它的内存。不过，由于垃圾回收器是一个优先级很低的线程，因此不一定会很快发现那些只具有弱引用的对象
+
+这就导致一个问题，ThreadLocal 在没有外部强引用时，发生 GC 时会被回收，如果创建 ThreadLocal 的线程一直持续运行，那么这个 Entry 对象中的 value 就有可能一直得不到回收，发生内存泄漏
+
+就比如线程池里的线程，线程都是复用的，那么之前的线程实例处理完后，出于复用的目的，线程依然存活，所以，ThreadLocal 设定的 value 值被持有，导致内存泄漏
+
+按照道理一个线程使用完，ThreadLocalMap 是应该要被清空的，但是现在线程被复用了
+
+#### 如何解决
+
+在代码的最后使用 remove
+
+```java
+ThreadLocal<String> localName = new ThreadLocal<>();
+try {
+    localName.set("张三");
+    // ...
+} finally {
+    localName.remove();
+}
+```
+
+remove 的源码很简单，找到对应的值全部置空，这样在垃圾回收器回收的时候，会自动把它们回收掉
+
+**为什么 ThreadLocalMap 的 key 要设计成弱引用**
+
+key 不设置成弱引用的话就会造成和 entry 中 value 一样内存泄漏的场景
+
+**示例**
+
+<img src="https://raw.githubusercontent.com/whn961227/images/master/data/20200727163649.png" style="zoom: 25%;" />
+
+**假设**
+
+1. Entry 的 key 使用强引用，即 key 对 ThreadLocal 对象使用强引用，也就是图中 5 使用强引用
+2. ThreadLocalMap 中不会对过期的 Entry 进行清理
+
+如果 ThreadLocalMap 的 key 使用强引用，那么即使栈内存的 ThreadLocal 引用被清除，但是堆中的 ThreadLocal 对象并不会被清除，因为 ThreadLocalMap 中的 Entry 的 key 对 ThreadLocal 对象是强引用
+
+如果当前线程不结束，那么堆中的 TheadLocal 对象将会一直存在，对应的内存就不会被回收，与之关联的 Entry 不会被回收（Entry 对应的 value 也不会被回收），当这种情况出现数量比较多的时候，未释放的内存就会上升，就可能出现内存泄露的问题
+
+**若 Entry 使用弱引用**
+
+**假设**
+
+1. ThreadLocalMap 中不会对过期的 Entry 进行清理
+
+按照源码，Entry 继承弱引用，其 key 对 ThreadLocal 是弱引用，也就是图中 5 是弱引用，6 是强引用
+
+当栈中的 ThreadLcoal 引用被清除了；由于堆内存中 ThreadLocalMap 的 Entry Key 弱引用 ThreadLocal 对象，此时 ThreadLocal 对象会被 gc 回收，Entry 的 key 为 null，但是 value 不为 null，且 value 也是强引用，所以 Entry 仍旧不能回收，只能释放 ThreadLocal 的内存，仍旧可能导致内存泄露
