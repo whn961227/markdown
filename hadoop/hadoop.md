@@ -125,6 +125,10 @@ HDFS 中的文件在物理上是分块存储（block），默认大小在 Hadoop
 
 **packet：**client 向 DataNode，或 DataNode 的 PipeLine 之间传数据的基本单位，默认 64K
 
+<img src="https://raw.githubusercontent.com/whn961227/images/master/data/image-20200727212412960.png" alt="image-20200727212412960" style="zoom: 80%;" />
+
+header 中包含了一些元信息，包括这个 Packet 是不是所属 block 的最后一个 packet，数据长度，编码，packet 的数据部分的第一个字节在 block 中的 offset，DataNode 接到这个 Packet 是否必须 sync 磁盘
+
 **chunk：**chunk 是 client 向 DataNode，或 DataNode 的 PipeLine 之间进行数据校验的基本单位，默认 512 Byte，因为用作校验，所以每个 chunk 需要带有 4 Byte 的校验位，每个 chunk 实际写入 packet 的大小为 516 Byte
 
 * 首先，当数据流进入 DFSOutputStream 时，DFSOutputStream 内会有一个 chunk 大小的 buf，当数据写满这个 buf（或遇到强制 flush），会计算 checkSum 值，然后填塞进 packet
@@ -173,6 +177,42 @@ HDFS 中的文件在物理上是分块存储（block），默认大小在 Hadoop
 
 
 
+### NN 和 2NN
+
+NameNode 元数据存储在内存中，为了解决易丢失，因此产生在磁盘中备份元数据的 **FsImage**；更新元数据的同时更新 FsImage，为了解决效率过低，因此，引入了 Edits 文件（只进行追加操作，效率很高），每当元数据有更新或者添加元数据时，修改内存中的元数据并追加到 Edits 中，可以通过 FsImage 和 Edits 的合并，合成元数据
+
+如果长时间添加数据到 Edits，会导致该文件过大，效率降低，而且一旦断电，恢复元数据需要的时间过长。因此，引入 2NN，定期进行 FsImage 和 Edits 的合并
+
+<img src="https://raw.githubusercontent.com/whn961227/images/master/data/image-20200727211447323.png" alt="image-20200727211447323"  />
+
+
+
+### DataNode 工作机制
+
+<img src="https://raw.githubusercontent.com/whn961227/images/master/data/image-20200727212820184.png" alt="image-20200727212820184" style="zoom: 80%;" />
+
+
+
+### 小文件存档
+
+**HDFS 存储小文件弊端**
+
+每个文件均按块存储，每个块的元数据存储在 NameNode 的内存中，因此 HDFS 存储小文件会非常低效。因为大量的小文件会耗尽 NameNode 中的大部分内存。
+
+**解决存储小文件办法之一**
+
+HDFS 存档文件或 HAR 文件，是一个更高效的文件存档工具，它将文件存入 HDFS 块，在减少 NameNode 内存使用的同时，允许对文件进行透明的访问。具体来说，HDFS 存档文件对内还是一个个独立文件，对 NameNode 而言却是一个整体，减少了 NameNode 的内存
+
+```shell
+# 通过 archive 工具存档
+hadoop archive -archiveName files.har /my/files /my
+# 第一个选项是存档文件的名称，这里是第一个参数 file.har
+# 第二个参数是需要归档的文件
+# 第三个参数是 Har 文件的输出目录
+```
+
+
+
 ### 如何扩展 HDFS 的存储容量
 
 * 增加 DN 节点数
@@ -209,6 +249,14 @@ dfs.blockreport.intervalMsec : 21600000
 # block 默认大小 128M
 dfs.block.size : 134217728
 ```
+
+
+
+### HDFS HA
+
+HDFS HA 功能通过配置 Active/Standby 两个 NameNodes 实现在集群中对 NameNode 的热备来解决单点故障问题
+
+https://www.jianshu.com/p/8a6cc2d72062
 
 
 

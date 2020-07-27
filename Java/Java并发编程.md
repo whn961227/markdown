@@ -2410,7 +2410,7 @@ key 不设置成弱引用的话就会造成和 entry 中 value 一样内存泄�
 
 **示例**
 
-<img src="https://raw.githubusercontent.com/whn961227/images/master/data/20200727163649.png" style="zoom: 25%;" />
+<img src="https://raw.githubusercontent.com/whn961227/images/master/data/20200727163649.png" style="zoom: 33%;" />
 
 **假设**
 
