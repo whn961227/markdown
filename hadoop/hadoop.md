@@ -254,9 +254,145 @@ dfs.block.size : 134217728
 
 ### HDFS HA
 
-HDFS HA 功能通过配置 Active/Standby 两个 NameNodes 实现在集群中对 NameNode 的热备来解决单点故障问题
+HDFS HA 功能通过配置 Active/Standby 两个 NameNodes 实现在集群中对 NameNode 的热备来解决单点故障问题，其中只有 Active NameNode 对外提供读写服务，Standby NameNode 会根据 Active NameNode 的状态变化，在必要时切换成 Active 状态
 
-https://www.jianshu.com/p/8a6cc2d72062
+<img src="https://raw.githubusercontent.com/whn961227/images/master/data/20200728115232.png" style="zoom: 33%;" />
+
+**ZKFC：**ZKFC 即 ZKFailoverController，作为独立进程存在，负责控制 NameNode 的主备切换，ZKFC 会监测 NameNode 的健康状况，当发现 Active NameNode 出现异常时会通过 Zookeeper 集群进行一次主备选举，完成 Active 和 Standby 状态的切换
+
+**JournalNode 集群：**共享存储系统，负责存储 HDFS 的元数据，Active NameNode（写入）和 Standby NameNode（读取）通过共享存储系统实现元数据同步，在主备切换过程中，新的 Active NameNode 必须确保元数据同步完成才能对外提供服务
+
+**Zookeeper 集群：**为 ZKFC 提供主备选举支持
+
+**DataNode 节点：**除了通过 JournalNode 共享 HDFS 的元数据信息之外，主 NameNode 和备 NameNode 还需要共享 HDFS 的数据块和 DataNode 之间的映射关系。DataNode 会同时向主 NameNode 和备 NameNode 上报数据块的位置信息
+
+####  主备切换实现
+
+[主备切换实现]: https://developer.ibm.com/zh/articles/os-cn-hadoop-name-node/
+
+<img src="https://raw.githubusercontent.com/whn961227/images/master/data/20200728105751.png" style="zoom: 25%;" />
+
+**ZKFailoverController **在启动的时候会创建 HealthMonitor 和 ActiveStandbyElector ，在创建的同时也会向它们注册相应的回调方法
+
+**HealthMonitor：**监控 NameNode 的健康状态，如果检测到 NameNode 状态发生变化，会回调 ZKFC 的相应方法进行自动的主备选举
+
+**ActiveStandbyElector：**接收 ZKFC 的选举请求，通过 Zookeeper 自动完成主备选举，选举完成后回调 ZKFC 的主备切换方法对 NameNode 进行 Active 和 Standby 状态的切换
+
+<img src="https://raw.githubusercontent.com/whn961227/images/master/data/20200728142654.png" style="zoom:33%;" />
+
+1. HealthMonitor 初始化完成之后会启动内部的线程来定时调用对应 NameNode 的 HAServiceProtocol RPC 接口的方法，对 NameNode 的健康状态进行检测
+2. HealthMonitor 如果检测到 NameNode 的健康状态发生变化，会回调 ZKFC 注册的相应方法进行处理
+3. 如果 ZKFC 判断需要进行主备切换，会首先使用 ActiveStandbyElector 来进行自动的主备选举
+4. ActiveStandbyElector 与 Zookeeper 进行交互完成自动的主备选举
+5. ActiveStandbyElector 在主备选举完成后，会回调 ZKFC 的相应方法来通知当前的 NameNode 成为主 NameNode 或者备 NameNode
+6. ZKFC 调用对应 NameNode 的 HAServiceProtocol RPC 接口的方法将 NameNode 转换为 Active 状态或 Standby 状态
+
+
+
+## MapReduce
+
+### 定义
+
+MapReduce 是一个分布式运算程序的编程框架，核心功能是将用户编写的业务逻辑代码和自带默认组件整合成一个完整的分布式运算程序，并发运行在一个 Hadoop 集群上
+
+**优点**
+
+* **MapReduce 易于编程**
+* **良好的扩展性**
+* **高容错性**
+* **适合 PB 级以上海量数据的离线处理**
+
+**缺点**
+
+* **不擅长实时计算**
+* **不擅长流式计算：**输入数据集是静态的
+* **不擅长 DAG（有向图）计算：**多个应用程序存在依赖关系，后一个应用程序的输入为前一个的输出。在这种情况下，每个 MapReduce 作业的输出结果都会写入到磁盘，会造成大量的磁盘 IO，导致性能非常的低下
+
+### Hadoop 序列化
+
+* **序列化：**将内存中的对象，转换成字节序列以便于存储到磁盘（持久化）和网络传输
+* **反序列化：**将收到字节序列（或其他数据传输协议）或者是磁盘的持久化数据，转换成内存中的对象
+
+**为什么不用 Java 的序列化**
+
+ Java 的序列化是一个重量级序列化框架（Serializable），一个对象被序列化后，会附带很多额外的信息（各种校验信息，Header，继承体系等），不便于在网络中高效传输。所以，Hadoop 自己开发了一套序列化体制（Writable）
+
+**Hadoop 序列化特点：**
+
+1. 紧凑
+2. 快速
+3. 可扩展
+4. 互操作
+
+**常用序列化类型**
+
+| Java 类型 | Hadoop Writable 类型 |
+| --------- | -------------------- |
+| boolean   | BooleanWritable      |
+| byte      | ByteWritable         |
+| int       | IntWritable          |
+| float     | FloatWritable        |
+| long      | LongWritable         |
+| double    | DoubleWritable       |
+| String    | Text                 |
+| map       | MapWritable          |
+| array     | ArrayWritable        |
+
+
+
+### 框架原理
+
+#### InputFormat 数据输入
+
+##### 切片与 MapTask 并行度决定机制
+
+**数据切片：**数据切片只是在逻辑上对输入进行分片，并不会在磁盘上将其切分成片进行存储
+
+1. 一个 Job 的 Map 阶段并行度由客户端在提交 Job 时的切片数决定
+2. 每一个 Split 切片分配一个 MapTask 并行实例处理
+3. 默认情况下，切片大小 = BlockSize
+4. 切片时不考虑数据集整体，而是逐个针对每一个文件单独切片
+
+##### FileInputFormat 切片机制
+
+1. 简单地按照文件的内容长度进行切分
+2. 切片大小，默认等于 Block 大小（每次切片时判断切完剩下的部分是否大于块的 1.1 倍，不大于 1.1 倍就划分一块切片）
+3. 切片时不考虑数据集整体，而是逐个针对每一个文件单独切分
+
+**缺点：**不管文件多小，都会是一个单独的切片，都会交给一个 MapTask，如果有大量的小文件，就会产生大量的 MapTask，处理效率极其低下
+
+##### CombineTextInputFormat 切片机制
+
+**应用场景：**用于小文件过多的场景，可以将多个小文件从逻辑上规划到一个切片中，这样，多个小文件就会交给一个 MapTask 处理
+
+**切片机制：**生成切片过程包括：**虚拟存储过程** 和 **切片过程**
+
+**设置虚拟存储切片最大值：**setMaxInputSplitSize
+
+* 虚拟存储过程
+  *  将输入目录下所有文件大小，依次和设置的虚拟存储切片最大值比较，如果不大于设置的最大值，逻辑上划分一个块；如果输入文件大于设置的最大值且大于两倍，那么以最大值切分一块；当剩余数据大小超过设置的最大值且不大于最大值 2 倍，此时将文件均分为 2 个虚拟存储块（防止出现太小切片）
+
+* 切片过程
+  * 判断虚拟存储的文件大小是否大于虚拟存储切片最大值，大于等于则单独形成一个切片；如果不大于则跟下一个虚拟存储文件进行合并，共同形成一个切片
+
+##### FileInputFormat 实现类
+
+* TextInputFormat
+
+  默认的 FileInputFormat 实现类。按行读取每条记录。Key 是存储该行在整个文件中的起始字节偏移量，LongWritable 类型；值是这行的内容，不包括任何行终止符（换行符和回车符），Text 类型
+
+* KeyValueTextInputFormat
+
+  每一行均为一条记录，被分隔符分割为 key，value。
+
+* NLineInputFormat
+
+  每个 map 进程处理的 InputSplit 不再按 Block 块去划分，而是按 NLineInputFormat 指定的行数 N 来划分
+
+* 自定义 InputFormat
+  * 自定义一个类继承 FileInputFormat
+  * 改写 RecordReader，实现一次读取一个完整文件封装 KV
+  * 在输出时使用 SequenceFileOutputFormat 输出合并文件
 
 
 
