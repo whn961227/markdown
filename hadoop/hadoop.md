@@ -456,6 +456,10 @@ public class HashPartitioner<K, V> extends Partitioner<K, V> {
 
 #### Map Task 机制
 
+
+
+
+
 #### Reduce Task 机制
 
 #### OutputFormat 数据输出
@@ -532,14 +536,31 @@ public class HashPartitioner<K, V> extends Partitioner<K, V> {
   3. RM 向 Client 返回该 job 资源的提交路径和作业 id
   4. Client 提交 jar 包，切片信息和配置文件到指定的资源提交路径
   5. Client 提交完资源后，向 RM 申请运行 MrAppMaster
+  
 * 作业初始化
   6. 当 RM 收到 Client 的请求后，将该 job 添加到容量调度器中
   7. 某一个空闲的 NM 领取到该 job
   8. 该 NM 创建 Container，并产生 MRAppMaster
   9. 下载 Client 提交的资源到本地
+  
 * 任务分配
   10. MrAppMaster 向 RM 申请运行多个 MapTask 任务资源
   11. RM 将运行 MapTask 任务分配给另外两个 NM，另外两个 NM 分别领取任务并创建容器
+  
+* 任务运行
+
+  12. MR 向两个接收到任务的 NM 发送程序启动脚本，这两个 NM 分别启动 MapTask，MapTask 对数据分区排序
+  13. MrAppMaster 等待所有 MapTask 运行完毕后，向 RM 申请容器，运行 ReduceTask
+  14. ReduceTask 向 MapTask 获取相应分区的数据
+  15. 程序运行完毕后，MR 会向 RM 申请注销自己
+
+* 进度和状态更新
+
+  Yarn 中的任务将其进度和状态（包括 counter）返回给应用管理器，客户端每秒（通过 mapreduce.client.progressmonitor.pollinerval 设置）向应用管理器请求进度更新，展示给用户
+
+* 作业完成
+
+  除了向应用管理器请求作业进度外，客户端每 5 秒都会通过调用 waitForCompletion() 来检查作业是否完成。时间间隔可以通过 mapreduce.client.completion.pollinterval 来设置。作业完成之后，应用管理器和 Container 会清理工作状态。作业的信息会被作为历史服务器存储以备之后用户核查
 
 
 
@@ -651,4 +672,49 @@ public class MyClient {
     }
 }
 ```
+
+
+
+## Hadoop 企业优化
+
+### MR 优化方法
+
+* **数据输入**
+
+  1. **合并小文件**
+
+  2. **采用 CombineTextInputFormat** 来作为输入，解决输入端大量小文件场景
+
+* **Map 阶段**
+
+  1. **减少溢写（Spill）次数：**通过调整 mapreduce.task.io.sort.mb 及 mapreduce.map.sort.spill.percent 参数值，增大触发 Spill 的内存上限，减少 Spill 次数，从而减少磁盘 IO
+  2. **减少合并（Merge）次数：**通过调整 io.sort.factor 参数，增加 Merge 的文件数目，减少 Merge 的次数，从而缩短 MR 处理时间
+  3. 在 Map 之后，不影响业务逻辑前提下，先进行 Combine 处理，减少 I/O
+
+* **Reduce 阶段**
+  1. 合理设置 Map 和 Reduce 数
+  2. **设置 Map、Reduce 共存：**调整 slowstart.completedmaps 参数，使 Map 运行到一定程度后，Reduce 也开始运行，减少 Reduce 的等待时间
+  3. **规避使用 Reduce：**因为 Reduce 在用于连接数据集时会产生大量的网络消耗
+  4. **合理设置 Reduce 端的 Buffer：**默认情况下，数据达到一个阈值的时候，Buffer 中的数据就会写磁盘，然后 Reduce 会从磁盘中获得所有数据。也就是说，Buffer 和 Reduce 是没有直接关联的，中间会多次写磁盘 -> 读磁盘的过程，既然有这个弊端，那么就可以通过参数来配置，使得 Buffer 中的一部分数据可以直接输送到 Reduce，从而减少 IO 开销：mapreduce.reduce.input.buffer.percent，默认为 0.0。当值大于 0 的时候，会保留指定比例的内存读 Buffer 中的数据直接拿给 Reduce 使用。这样一来，设置 Buffer 需要内存，读取数据需要内存，Reduce 计算需要内存，所以要根据任务的运行情况进行调整
+* **IO 传输**
+  1. **采用数据压缩的方式：**安装 Snappy 和 LZO 压缩编码器
+  2. **使用 SequenceFile 二进制文件**
+* **数据倾斜问题**
+  1. **抽样和范围分区：**通过对原始数据进行抽样得到的结果集来预设分区边界值
+  2. **自定义分区**
+  3. Combine
+  4. 采用 Map Join，尽量避免 Reduce Join
+
+### HDFS 小文件优化
+
+**弊端：**HDFS 上每个文件都要在 NameNode 上建立一个索引，这个索引的大小约为 150 byte，这样当小文件比较多的时候，就会产生很多的索引文件，一方面会大量占用 NameNode 的内存空间，另一方面就是索引文件过大使得索引速度变慢
+
+**解决方案：**
+
+1. 在数据采集时，就将小文件或小批数据合并成大文件再上传 HDFS（**Archive**）
+2. 在业务处理之前，在 HDFS 上使用 MR 程序对小文件进行合并（**Sequence File**）
+3. 在 MR 处理时，采用 CombineTextInputFormat 提高效率
+4. **开启 JVM 重用：**对于大量小文件 job，可以开启 JVM 重用会减少 45% 运行时间。
+   * JVM 重用原理：一个 Map 运行在一个 JVM 上，开启重用的话，该 Map 在 JVM 上运行完毕后，JVM 继续运行其他 Map
+   * 具体设置：mapreduce.job.jvm.numtasks 值在 10 - 20 之间
 
