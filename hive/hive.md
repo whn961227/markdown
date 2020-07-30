@@ -17,6 +17,23 @@ Hive 是基于 Hadoop 的一个**数据仓库**工具，可以将**结构化的�
 **优点：**
 
 * 支持用户自定义函数
+* Hive 的优势在于处理大数据，对于处理小数据没有优势
+* 避免写 MR
+
+**缺点：**
+
+* Hive 的 HQL 表达能力有限
+  * 迭代式算法无法表达
+  * 数据挖掘方面不擅长
+* Hive 的效率比较低
+  * Hive 自动生成的 MR 作业，通常情况下不够智能化
+  * Hive 调优比较困难，粒度较粗
+
+
+
+### Hive 和数据库比较
+
+* **数据存储位置**
 
 
 
@@ -100,4 +117,44 @@ Hive 中有三种复杂数据类型 ARRAY、MAP 和 STRUCT
 
 1. 继承 org.apache.hadoop.hive.sql.GenericUDF
 2. 重写 initialize，evaluate，getDisplayString 函数
+
+```java
+// 按','分割
+public class MyUDTF extends GenericUDTF {
+
+    private List<String> dataList = new ArrayList<>();
+
+    @Override
+    public StructObjectInspector initialize(StructObjectInspector argOIs) throws UDFArgumentException {
+        // 定义输出数据的列名
+        List<String> fieldNames = new ArrayList<>();
+        fieldNames.add("word");
+        // javaStringObjectInspector 定义输出数据类型
+        List<ObjectInspector> fieldOIs = new ArrayList<>();
+        fieldOIs.add(PrimitiveObjectInspectorFactory.javaStringObjectInspector);
+        return ObjectInspectorFactory.getStandardStructObjectInspector(fieldNames, fieldOIs);
+    }
+
+    public void process(Object[] objects) throws HiveException {
+        // 1. 获取数据
+        String data = objects[0].toString();
+        // 2. 获取分隔符
+        String splitKey = objects[1].toString();
+        // 3. 切分数据
+        String[] words = data.split(splitKey);
+        // 4. 遍历写出
+        for (String word : words) {
+            // 5. 将数据放入集合
+            dataList.clear();
+            dataList.add(word);
+            // 6. 写出数据的操作
+            forward(dataList);
+        }
+    }
+
+    public void close() throws HiveException {
+
+    }
+}
+```
 
