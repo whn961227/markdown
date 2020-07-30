@@ -177,6 +177,20 @@ header 中包含了一些元信息，包括这个 Packet 是不是所属 block �
 
 
 
+### NN 内存全景
+
+<img src="https://raw.githubusercontent.com/whn961227/images/master/data/20200730145420.png" style="zoom: 25%;" />
+
+**NameSpace：**维护整个文件系统的目录结构及目录树上的状态变化。除在内存常驻外，这部分数据会定期 flush 到持久化设备上，生成一个新的 FsImage 文件，方便 NameNode 发生重启时，从 FsImage 及时恢复整个 NameSpace
+
+<img src="https://raw.githubusercontent.com/whn961227/images/master/data/20200730151053.png" style="zoom:25%;" />
+
+整个 NameSpace 目录树中存在两种不同类型的 INode 数据结构：INodeDirectory 和 INodeFile。其中 INodeDirectory 标识的是目录树中的目录，INodeFile 标识的是目录树中的文件
+
+**BlockManager：**维护整个文件系统中与数据块相关的信息及数据块的状态变化，BlocksMap 在 NameNode 内存空间占据很大比例，由 BlockManager 统一管理。NameSpace 与 BlockManager 之间通过 INodeFile 有序 Blocks 数组关联到一起
+
+
+
 ### NN 和 2NN
 
 NameNode 元数据存储在内存中，为了解决易丢失，因此产生在磁盘中备份元数据的 **FsImage**；更新元数据的同时更新 FsImage，为了解决效率过低，因此，引入了 Edits 文件（只进行追加操作，效率很高），每当元数据有更新或者添加元数据时，修改内存中的元数据并追加到 Edits 中，可以通过 FsImage 和 Edits 的合并，合成元数据
@@ -307,6 +321,8 @@ MapReduce 是一个分布式运算程序的编程框架，核心功能是将用�
 * **不擅长实时计算**
 * **不擅长流式计算：**输入数据集是静态的
 * **不擅长 DAG（有向图）计算：**多个应用程序存在依赖关系，后一个应用程序的输入为前一个的输出。在这种情况下，每个 MapReduce 作业的输出结果都会写入到磁盘，会造成大量的磁盘 IO，导致性能非常的低下
+
+
 
 ### Hadoop 序列化
 
@@ -526,6 +542,8 @@ public class HashPartitioner<K, V> extends Partitioner<K, V> {
 
   Container 是资源的抽象，它封装了某个节点上的多维度资源，如内存、CPU、磁盘、网络等
 
+
+
 ### 工作机制
 
 <img src="https://raw.githubusercontent.com/whn961227/images/master/data/20200729162309.png" style="zoom: 50%;" />
@@ -605,6 +623,8 @@ RPC 通常采用 **客户机/服务器** 模型。请求程序是一个客户机
 5. 被调用函数按照所获参数执行，并将结果返回给 Stub 程序
 6. Stub 程序将此结果封装成消息，通过网络通信模块逐级地传送给客户程序
 
+
+
 ### RPC 总体架构
 
 Hadoop RPC 主要分为四部分：
@@ -613,6 +633,8 @@ Hadoop RPC 主要分为四部分：
 * **函数调用层：**主要功能是定位要调用的函数并执行该函数，Hadoop RPC 采用了 Java 反射机制与动态代理实现了函数调用
 * **网络传输层：**描述了 Client 和 Server 之间消息传输的方式，Hadoop  RPC 采用了基础 TCP/IP 的 Socket 机制
 * **服务器端处理框架：**
+
+
 
 ### Hadoop RPC 的使用方法
 
@@ -704,6 +726,8 @@ public class MyClient {
   2. **自定义分区**
   3. Combine
   4. 采用 Map Join，尽量避免 Reduce Join
+
+
 
 ### HDFS 小文件优化
 
