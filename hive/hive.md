@@ -281,7 +281,7 @@ row format delimited fields terminated by '\t';
 create table test_partition(
 	deptno int, dname string, loc string
 )
-partitioned by (month string)
+partitioned by (month string) -- 根据新字段进行分区
 row format delimited fields terminated by '\t';
 ```
 
@@ -535,6 +535,50 @@ cluster by 除了具有 distribute by 的功能外还兼具 sort by 的功能，
 
 #### 分桶及抽样查询
 
+**分区针对的是数据的存储路径；分桶针对的是数据文件**
+
+分区提供一个隔离数据和优化查询的遍历方式
+
+分桶是将数据集分解成更容易管理的若干部分的另一个技术
+
+```sql
+-- 需要设置属性
+set hive.enforce.bucketing = true;
+set mapreduce.job.reduces = -1;
+
+-- 创建普通表
+create table stu(id int, name string)
+row format delimited fields terminated by '\t';
+-- 导入数据
+load data local inpath '/opt/module/datas/student.txt' into table stu;
+-- 创建分桶表
+create table stu_buck(id int, name string)
+clustered by(id)
+into 4 buckets
+row format delimited fields terminated by '\t';
+-- 导入数据到分桶表，通过子查询的方式
+insert into table stu_buck
+select id, name from stu;
+```
+
+**分桶抽样查询**
+
+对于非常大的数据集，有时用户需要使用的是一个具有代表性的查询结果而不是全部结果，Hive 可以通过对表进行抽样来满足这个需求
+
+```sql
+select * from stu_buck tablesample(bucket 1 out of 4 on id);
+```
+
+> 注：tablesample 是抽样语法，语法：tablesample (bucket x out of y)
+>
+> y 必须是 table 总 bucket 数的倍数或者因子。Hive 根据 y 的大小，决定抽样的比例。例如，table 总共分了 4 份，当 y = 2 时，抽取 (4/2=) 2 个 bucket 的数据，当 y = 8 时，抽取 (4/8=)1/2 个 bucket 的数据
+>
+> x 表示从哪个 bucket 开始抽取，如果需要取多个分区，以后的分区号为当前分区号加上 y。例如，table 总 bucket 数为 4，tablesample(bucket 1 out of 2)，表示总共抽取 (4/2=) 2 个 bucket 的数据，抽取第 1(x) 个和第 3(x+y) 个 bucket 的数据
+>
+> 注意：x 的值必须小于等于 y 的值
+
+
+
 #### 其他常用查询函数
 
 **空字段赋值：**NVL (string1, replace_with)，如果 string1 为 NULL，则 NVL 函数返回 replace_with 的值，否则返回 string1 的值，如果两个参数都为 NULL，则返回 NULL
@@ -677,5 +721,220 @@ where
 	substring(orderdate, 1, 7) = '2017-04'
 group by
 	name
+-- 查询顾客的购买明细及月购买总额
+select
+	name,
+	orderdate,
+	cost,
+	sum(cost) over(partition by month(orderdate))
+from
+	business
+-- 将 cost 按照日期累加
+select
+	name,
+	orderdate,
+	cost,
+	sum(cost) over() as sample1, -- 所有行相加
+	sum(cost) over(partition by name) as sample2, -- 按 name 分组，组内数据相加
+	sum(cost) over(partition by name order by orderdate) as sample3, -- 按 name 分组，组内数据累加
+	sum(cost) over(partition by name order by orderdate between unbounded preceding and current row) as sample4, -- 和 sample3 一样，由起点到当前行的聚合
+	sum(cost) over(partition by name order by orderdate between 1 preceding and current row) as sample5, -- 当前行和前面一行做聚合
+	sum(cost) over(partition by name order by orderdate between 1 preceding and 1 following) as sample6, -- 当前行和前面一行及后面一行做聚合
+	sum(cost) over(partition by name order by orderdate between current row and unbounded following) as sample7 -- 当前行和后面所有行做聚合
+from
+	business;
+-- 查看顾客上次的购买时间
+select
+	name,
+	orderdate,
+	cost,
+	lag(orderdate, 1, '1900-01-01') over(partition by name order by orderdate) as time1,
+	lag(orderdate, 2) over(partition by name order by orderdate) as time2
+from
+	business;
+-- 查询前 20% 时间的订单信息
+select
+	*
+from
+	(select
+        name,
+        orderdate,
+        cost,
+        ntile(5) over(order by orderdate) sorted
+    from
+        business) t
+where
+	t.sorted = 1;
 ```
 
+**Rank**
+
+rank()：排序相同时会重复，总数不会变
+
+dense_rank()：排序相同时会重复，总数会减少
+
+row_number()：会根据顺序计算
+
+
+
+###  调优
+
+#### Fetch 抓取
+
+Fetch 抓取是指 **Hive 中对某些情况的查询可以不必使用 MR 计算**
+
+在 hive-default.xml.template 文件中 hive.fetch.task.conversion 默认是 more，该属性修改为 **more** 后，在**全局查找、字段查找、limit 查找**等都不走 MR
+
+#### 本地模式
+
+在 Hive 的输入数据量非常小的情况下，为查询触发执行任务消耗的时间可能会比实际 Job 的执行时间要多，**Hive 可以通过本地模式在单台机器上处理所有的任务，对于小数据集，执行时间可以明显被缩短**
+
+通过设置 hive.exec.model.local.auto 的值为 true，让 Hive 在适当的时候自动启动这个优化
+
+#### 表的优化
+
+##### 小表、大表 join
+
+参照[ MR 中 join 的多种引用](# join的多种引用)
+
+##### 大表 join 大表
+
+**空 key 过滤**
+
+**空 key 转换**
+
+##### Group by
+
+默认情况下，Map 阶段同一 key 数据分发到一个 Reduce，当一个 key 数据过大时就发生数据倾斜
+
+并不是所有的聚合操作都需要在 Reduce 端完成，很多聚合操作都可以先在 Map 端进行部分聚合，最后在 Reduce 端得出最终结果
+
+1. 开启 Map 端聚合参数设置
+
+   * 是否在 Map 端进行聚合，默认为 true
+
+     hive.map.aggr = true
+
+   * 在 Map 端进行聚合操作的条目数目
+
+     hive.groupby.mapaggr.checkinterval = 100000
+
+   * 有数据倾斜的时候进行负载均衡（默认是 false）
+
+     hive.groupby.skewindata = true
+
+   当选项设定为 true 时，生成的查询计划会有两个 MR job。第一个 MR job 中，Map 的输出结果会随机分布到 Reduce 中，每个 Reduce 做部分聚合操作，并输出结果，这样处理的结果是相同的 group by key 有可能被分发到不同的 Reduce 中，从而达到负载均衡的目的；第二个 MR job 中在根据预处理的数据结果按照 group by key 分布到 Reduce 中（这个过程可以保证相同的 group by key 被分布到同一个 Reduce 中），最后完成最终的聚合操作
+
+##### Count（distinct）去重统计
+
+数据量小的时候无所谓，数据量大的情况下，由于 Count distinct 操作需用一个 Reduce Task 来完成，这个 Reduce 需要处理的数据量太大，就会导致整个 job 很难完成，一般 count distinct 使用先 group by 再 count 的方式替换
+
+##### 笛卡尔积
+
+##### 行列过滤
+
+列处理：在 select 中，只拿需要的列，如果有，尽量使用分区过滤，少用 select *
+
+行处理：在分区剪裁中，当使用外关联时，如果将副表的过滤条件写在 where 后，那么就会先全表关联，之后再过滤
+
+##### 动态分区调整
+
+##### 分桶
+
+参考 [分桶及抽样查询](#分桶及抽样查询)
+
+##### 分区
+
+参考 [分区表](#分区表)
+
+#### 数据倾斜
+
+##### 合理设置 Map 数
+
+1. 通常情况下，作业会通过 input 的目录产生一个或者多个 map 任务
+
+2. 是不是 map 数越多越好
+
+   不是，如果一个任务有很多小文件（远远小于块大小 128m），则每个小文件也会被当作一个块，用一个 map 任务来完成，而**一个 map 任务启动和初始化的时间远远大于逻辑处理的时间**，就会造成很大的资源浪费，而且，同时可执行的 map 数是受限的
+
+3. 是不是保证每个 map 处理接近 128M 的文件块就 OK 了
+
+   不一定，比如一个 127M 的文件，正常会用一个 map 去完成，但这个文件只有一个或两个小字段，却又几千万的记录，如果 map 处理的逻辑比较复杂，用一个 map 任务去做，肯定比较耗时
+
+##### 小文件进行合并
+
+在 map 执行前合并小文件，减少 map 数：CombineHiveInputFormat 具有对小文件进行合并的功能（系统默认的格式），HiveInputFormat 没有对小文件合并功能
+
+set hive.input.format = org.apache.hadoop.hive.ql.io.CombineHiveInputFormat
+
+##### 复杂文件增加 Map 数
+
+当 input 的文件都很大，任务逻辑复杂，map 执行非常慢的时候，可以考虑增加 Map 数，来使得每个 map 处理的数据量减少，从而提高任务的执行效率
+
+增加 map 的方法：根据 computeSliteSize(Math.max(minSize, Math.min(maxSize, blocksize))) = blocksize = 128M 公式，调整 maxSize 最大值，让 maxSize 最大值低于 blocksize 就可以增加 map 的个数
+
+##### 合理设置 Reduce 数
+
+1. 确定 Reduce 个数的方法
+
+   * 每个 Reduce 处理的数据量默认是 256M
+
+     hive.exec.reducers.bytes.per.reducer = 256000000
+
+   * 每个任务最大的 reduce 数，默认为 1009
+
+     hive.exec.reducers.max = 1009
+
+   * 计算 reducer 数的公式
+
+     N = min( 参数 2，总输入数据量 / 参数 1 )
+
+2. 调整 reduce 个数
+
+   1. 方法一：
+
+      set hive.exec.reducers.bytes.per.reducer = 50000000
+
+   2. 方法二：
+
+      set mapred.reduce.tasks = 15
+
+3. Reduce 个数并不是越多越少
+
+   * 过多的启动和初始化 Reduce 会消耗时间和资源
+   * 有多少个 Reduce，就会有多少个输出文件，如果生成了很多个小文件，那么如果这些小文件作为下一个任务的输入，则也会出现小文件过多的问题
+
+#### 并行执行
+
+Hive 会将一个查询转化成一个或者多个阶段。这样的阶段可以是 MR 阶段、抽样阶段、合并阶段、limit 阶段。或者 Hive 执行过程中可能需要的其他阶段。默认情况下，Hive 一次只会执行一个阶段。不过，某个特定的 job 可能包含众多的阶段，而这些阶段可能并非完全互相依赖的，也就是说有些阶段是可以并行执行的，这样可能使得整个 job 的执行时间缩短
+
+```shell
+set hive.exec.parallel = true; # 打开任务并行执行
+set hive.exec.parallel.thread.number = 16; # 同一个 sql 允许最大并行度，默认为 8
+```
+
+#### 严格模式
+
+Hive 提供了严格模式，可以防止用户执行那些可能意想不到的不好的影响的查询
+
+```shell
+# 通过设置属性 hive.mapred.mode 值为默认是非严格模式 nonstrict
+<property>
+    <name>hive.mapred.mode</name>
+    <value>strict</value>
+</property>
+```
+
+开启严格模式可以禁止 3 种类型的查询
+
+1. 对于分区表，**除非 where 语句中含有分区字段过滤条件来限制范围，否则不允许执行**
+2. 对于**使用了 order by 语句的查询，要求必须使用 limit 语句**
+3. **限制笛卡尔积的查询**
+
+#### JVM 重用
+
+#### 推测执行
+
+#### 压缩
+
+#### 执行计划（Explain）
