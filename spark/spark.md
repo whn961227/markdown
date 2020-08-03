@@ -77,6 +77,8 @@ bin/spark-submit \
 
 构建一个由 Master+Slave 构成的 Spark 集群，Spark 运行在集群中
 
+<img src="https://raw.githubusercontent.com/whn961227/images/master/data/image-20200803213840165.png" alt="image-20200803213840165"  />
+
 #### Yarn 模式
 
 Spark 客户端直接连接 Yarn，不需要额外构建 Spark 集群，有 yarn-client 和 yarn-cluster 两种模式，主要区别在于：Driver 程序的运行节点
@@ -85,7 +87,7 @@ yarn-client：Driver 程序运行在客户端，适用于交互、调试，希�
 
 yarn-cluster：Driver 程序运行在由 RM 启动的 AppMaster，适用于生产环境
 
-
+<img src="https://raw.githubusercontent.com/whn961227/images/master/data/20200803213742.png"  />
 
 ### WordCount 程序
 
@@ -103,3 +105,27 @@ object WordCount {
 
 
 ## Spark Core
+
+### RDD 概述
+
+#### 定义
+
+RDD 是弹性分布式数据集，是 Spark 中最基本的数据抽象，代码中是一个抽象类，它代表一个**不可变、可分区、里面的元素可并行计算**的集合
+
+#### 特点
+
+**分区**
+
+RDD 逻辑上是分区的，每个分区的数据是抽象存在的，计算的时候会通过一个 **compute** 函数得到每个分区的数据。如果 RDD 是通过已有的文件系统构建，则 compute 函数是读取指定文件系统中的数据，如果 RDD 是通过其他 RDD 转化而来，则 compute 函数是执行转换逻辑将其他 RDD 的数据进行转换
+
+**只读**
+
+RDD 是只读的，要想改变 RDD 中的数据，只能在现有的 RDD 基础上创建新的RDD
+
+由一个 RDD 转化到另一个 RDD，可以通过丰富的操作算子实现
+
+RDD 的操作算子包括两类，一类叫做 transformations，它是用来将 RDD 进行转化，构建 RDD 的血缘关系；另一类叫做 actions，它是用来触发 RDD 的计算，得到 RDD 的相关计算结果或者将 RDD 保存到文件系统中。
+
+**依赖**
+
+RDD 通过操作算子进行转换，转换得到的新 RDD 包含了从其他 RDD 衍生所必需的信息，RDD 之间维护着这种血缘关系，也称之为**依赖**。
