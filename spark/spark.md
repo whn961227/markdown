@@ -98,6 +98,12 @@ object WordCount {
         val conf = new SparkConf().setAppName("WordCount");
         // 创建 SparkContext，该对象是提交 Spark APP 的入口
         val sc= new SparkContext(conf);
+        // 使用 sc 创建 RDD 并执行相应的 transformation 和 action
+        val res: RDD[(String, Int)] = sc.textFile("input/words").flatMap(_.split(" ")).map((_, 1)).reduceByKey(_+_)
+        // 打印
+        res.collect().foreach(print)
+        // 关闭连接
+        sc.stop()
     }
 }
 ```
@@ -129,3 +135,411 @@ RDD 的操作算子包括两类，一类叫做 transformations，它是用来将
 **依赖**
 
 RDD 通过操作算子进行转换，转换得到的新 RDD 包含了从其他 RDD 衍生所必需的信息，RDD 之间维护着这种血缘关系，也称之为**依赖**。
+
+<img src="https://raw.githubusercontent.com/whn961227/images/master/data/20200804093915.png" style="zoom:33%;" />
+
+依赖包括两种：一种是**窄依赖**，上游 RDD 和下游 RDD 分区之间的关系是**一对一**的，或者上游 RDD 一个分区只对应一个下游 RDD 的分区的情况下的上游 RDD 和下游 RDD 的分区关系是**多对一**的，**不会有 shuffle 产生**，另一种是**宽依赖**，上游 RDD 与 子 RDD 分区之间的关系是**一对多**，**会有 shuffle 的产生**，上游 RDD 的一个分区的数据去到了下游 RDD 的不同分区里面
+
+**缓存**
+
+如果在应用程序中多次使用同一个 RDD，可以将 RDD 缓存起来，该 RDD 只有在第一次计算的时候会根据血缘关系得到分区的数据，在后续其他地方用到该 RDD 的时候，会直接从缓存处取而不用根据血缘关系计算，这样就加速后期的重用。
+
+**CheckPoint**
+
+虽然 RDD 的血缘关系天然地可以实现容错，当 RDD 的某个分区数据失败或丢失，可以通过血缘关系重建。但是对于长时间迭代型应用来说，随着迭代的进行，RDD 之间的血缘关系会越来越长，一旦在后续迭代过程中出错，则需要通过非常长的血缘关系去重建，势必影响性能。为此，RDD 支持 checkpoint 将数据保存到持久化的存储中，这样就可以**切断之前的血缘关系**，因为 checkpoint 后的 RDD 不需要知道它的上游 RDDs 了，它可以从 checkpoint 处拿到数据
+
+
+
+### RDD 编程
+
+#### RDD 的创建
+
+##### **从集合创建**
+
+```scala
+sc.parallelize()
+sc.makeRDD()
+```
+
+**从外部存储系统的数据集创建**
+
+```scala
+sc.textFile();
+```
+
+#### RDD 的转换
+
+##### Value 类型
+
+```scala
+map(func)
+mapPartitions(func)
+/* 
+map() 和 mapPartitions() 的区别：
+map()：一次处理一条数据
+mapPartitions()：每次处理一个分区的数据，这个分区的数据处理完后，原 RDD 中分区的数据才能释放，可能导致 OOM
+*/
+mapPartitionsWithIndex(func)
+flatMap(func) // flatMap() 比 map() 多一步扁平化操作
+glom() // 将每一个分区形成一个数组，形成新的 RDD 类型是 RDD[Array[T]]
+groupBy(func)
+filter(func)
+sample(withReplacement, fraction, seed) // 以指定的随机种子随机抽样出数量为 fraction 的数据，withReplacement 表示是抽出的数据是否放回，true 为有放回的抽样，false 为无放回的抽样，seed 用于指定随机数生成器种子
+distinct([numTasks])
+coalesce(numPartitions)
+repartition(numPartitions)
+/*
+coalesce 和 repartition 的区别
+coalesce 重新分区，可以选择是否进行 shuffle 过程
+repartition 实际上就是调用 coalesce，默认是进行 shuffle 的
+*/
+sortBy(func, [ascending], [numTasks]) // 使用 func 先对数据进行处理，按照处理后的数据比较结果排序
+pipe(command,[envVars]) // 管道，针对每个分区，都执行一个 shell 脚本，返回输出的 RDD，注意：脚本需要放到 Worker 节点可以访问到的位置
+
+```
+
+##### 双 Value 类型交互
+
+```scala
+union(otherDataSet) // 并集
+subtract(otherDataset) // 差集
+intersection(otherDataset) // 交集
+cartesian(otherDataset) // 笛卡尔积
+zip(otherDataset) // 将两个 RDD 组合成 key/value 形式的 RDD，这里默认两个 RDD 的 partition 数量以及元素数量都相同，否则会抛出异常
+```
+
+##### Key-Value 类型
+
+```scala
+partitionBy // 对 pairRDD 进行分区操作，产生 shuffle 过程
+groupByKey
+reduceByKey
+/*
+reduceByKey 和 groupByKey 的区别
+reduceByKey：按照 key 进行聚合，在 shuffle 之前有 combine(预聚合)操作，返回结果是 RDD[k,v]
+groupByKey：按照 key 进行分组，直接进行 shuffle
+*/
+aggregateByKey(zeroValue:U,[partitioner: Partitioner]) (seqOp: (U, V) => U,combOp: (U, U) => U)
+// zeroValue：给每一个分区中的每一个 key 一个初始值
+// seqOp：函数用于在每一个分区中用初始值逐步迭代 value
+// combOp：函数用于合并每个分区中的结果
+foldByKey(zeroValue: V)(func: (V, V) => V): RDD[(K, V)]
+// aggregateByKey 的简化操作，seqOp 和 combOp 相同
+combineByKey[C](createCombiner: V => C,  mergeValue: (C, V) => C,  mergeCombiners: (C, C) => C) // 对相同 K，把 V 合并成一个集合
+// createCombiner：combineByKey() 会遍历分区中的所有元素，因此每个元素的键要么还没有遇到过，要么就和之前的某个元素的键相同。如果这是一个新的元素，combineByKey()会使用一个叫做 createCombiner() 的函数来创建那个键对应的累加器的初始值
+// mergeValue：如果这是一个在处理当前分区之前已经遇到的键，它会使用 mergeValue() 方法将该键的累加器对应的当前值与这个新的值进行合并
+// mergeCombiners：由于每个分区都是独立处理的，因此对于同一个键可以有多个累加器。如果有两个或者更多的分区都有对应同一个键的累加器，就需要使用用户提供的 mergeCombiners() 方法将各个分区的结果进行合并
+sortByKey
+mapValues // 只对 V 进行操作
+join(otherDataset,[numTasks])
+cogroup(otherDataset, [numTasks])
+```
+
+**aggregateByKey 案例分析**
+
+<img src="https://raw.githubusercontent.com/whn961227/images/master/data/20200804112517.png" style="zoom: 33%;" />
+
+**combineByKey 案例分析**
+
+<img src="https://raw.githubusercontent.com/whn961227/images/master/data/20200804113456.png" style="zoom: 33%;" />
+
+#### Action
+
+```scala
+reduce(func)
+collect()
+count()
+first()
+take(n)
+takeOrdered(n)
+aggregate(zeroValue: U)(seqOp: (U, T) ⇒ U, combOp: (U, U) ⇒ U)
+fold(num)(func)
+saveAsTextFile(path)
+saveAsSequenceFile(path)
+saveAsObjectFile(path)
+countByKey()
+foreach(func)
+```
+
+#### RDD 中的函数传递
+
+**传递一个方法**
+
+使类继承 scala.Serializable
+
+```scala
+class Search() extends Serializable {...}
+```
+
+**传递一个属性**
+
+两种解决方案：
+
+```scala
+// 1. 使类继承 scala.Serializable
+class Search() extends Serializable {...}
+// 2. 将类变量 query 赋值给局部变量
+def getMatche2(rdd:RDD[String]):RDD[String] = {
+    val query_:String = this.query
+    rdd.filter(x => x.contains(query_))
+}
+```
+
+#### RDD 依赖关系
+
+##### Lineage
+
+RDD 只支持粗粒度转换，即在大量记录上执行的单个操作。将创建 RDD 的一系列 Lineage（血统）记录下来，以便恢复丢失的分区。RDD 的 Lineage 会记录 RDD 的元数据信息和转换行为，当该 RDD 的部分分区数据丢失时，它可以根据这些信息来重新运算和恢复丢失的数据分区
+
+```scala
+// 查看 RDD 的 Lineage
+toDebugString
+// 查看依赖类型
+dependencies
+```
+
+##### 宽依赖
+
+##### 窄依赖
+
+##### DAG
+
+DAG 叫做有向无环图，原始的 RDD 通过一系列的转换就形成了 DAG，根据 RDD 之间的依赖关系的不同将 DAG 划分成不同的 stage，对于窄依赖，partition 的转换处理在 stage 中完成计算。对于宽依赖，由于有 shuffle 的存在，只能在 parent RDD 处理完成后，才能开始接下来的计算，因此**宽依赖是划分 stage 的依据**
+
+##### 任务划分
+
+RDD 任务可以切分为：Application、Job、Stage 和 Task
+
+1. Application：初始化一个 SparkContext 即生成一个 Application
+2. Job：一个 Action 算子就会生成一个 Job
+3. Stage：根据 RDD 之间的依赖关系的不同将 Job 划分成不同的 Stage
+4. Task：Stage 是一个 TaskSet，task 数目由该 Stage 最后一个 RDD 中的 partition 个数决定，将 Stage 划分的结果发送到不同的 Executor 执行即为一个 Task
+
+<img src="https://raw.githubusercontent.com/whn961227/images/master/data/20200804142449.png" style="zoom:33%;" />
+
+#### RDD 缓存
+
+RDD 通过 persist 方法或 cache 方法可以将前面的计算结果缓存，默认情况下 persist() 会把数据以序列化的形式缓存在 JVM 的堆空间中
+
+但是并不是这两个方法被调用时立即缓存，而是触发后面的 action 时，该 RDD 将会被缓存在计算节点的内存中，并供后面重用
+
+cache 底层是调用了 persist 方法，默认的存储级别是**仅在内存存储一份**
+
+Spark 的存储级别还有很多种，存储级别在 object StorageLevel 中定义：
+
+```scala
+// 在存储级别的末尾加上“_2”来把持久化数据存为 2 份
+val NONE = new StorageLevel(false, false, false, false)
+val DISK_ONLY = new StorageLevel(true, false, false, false)
+val DISK_ONLY_2 = new StorageLevel(true, false, false, false, 2)
+val MEMORY_ONLY = new StorageLevel(false, true, false, true)
+val MEMORY_ONLY_2 = new StorageLevel(false, true, false, true, 2)
+val MEMORY_ONLY_SER = new StorageLevel(false, true, false, false)
+val MEMORY_ONLY_SER_2 = new StorageLevel(false, true, false, false, 2)
+// 如果数据在内存中放不下，则溢写到磁盘上
+val MEMORY_AND_DISK = new StorageLevel(true, true, false, true)
+val MEMORY_AND_DISK_2 = new StorageLevel(true, true, false, true, 2)
+// 如果数据在内存中放不下，则溢写到磁盘上。在内存中存放序列化后的数据
+val MEMORY_AND_DISK_SER = new StorageLevel(true, true, false, false)
+val MEMORY_AND_DISK_SER_2 = new StorageLevel(true, true, false, false, 2)
+val OFF_HEAP = new StorageLevel(true, true, true, false, 1)
+```
+
+缓存有可能丢失，或者存储内存的数据由于内存不足而被删除，RDD 的缓存容错机制保证了即使缓存丢失也能保证计算的正确执行。通过基于 RDD 的一系列转换，丢失的数据会被重新计算，由于 RDD 的各个 Partition 是相对独立的，因此只需要计算丢失的部分即可，不需要重算全部 Partition
+
+#### RDD CheckPoint
+
+为当前 RDD 设置检查点，该函数将会创建一个二进制文件，并存储到 checkpoint 目录中，该目录是用 SparkContext.setCheckpointDir() 设置的。在 checkpoint 的过程中，该 RDD 的所有依赖于父 RDD 的信息将全部被移除。对 RDD 进行 checkpoint 操作并不会马上被执行，必须执行 Action 操作才能触发
+
+
+
+### 键值对 RDD 数据分区器
+
+Spark 目前支持 **Hash 分区**和 **Range 分区**，用户也可以**自定义分区**，Hash 分区为当前的默认分区，Spark 中分区器直接决定了 RDD 中的分区的个数，RDD中每条数据经过 shuffle 过程属于哪个分区和 Reduce 的个数
+
+> 注意：
+>
+> 1. 只有 Key-Value 类型的 RDD 才有分区器，非 Key-Value 类型的 RDD 分区器的值是 None
+> 2. 每个 RDD 的分区 ID 范围：0 ~ numPartitions-1，决定这个值是属于哪个分区
+
+#### 获取 RDD 分区
+
+可以通过使用 RDD 的 partitioner 属性来获取 RDD 的分区方式
+
+#### Hash 分区
+
+HashPartitioner 分区的原理：对于给定的 key，计算其 hashCode，除以子 RDD 分区的个数取余
+
+#### Range 分区
+
+**HashPartitioner 分区弊端：**可能导致每个分区中数据量的不均匀，极端情况下会导致某些分区拥有 RDD 的全部数据
+
+**RangePartitioner 作用：**将一定范围内的数映射到某一个分区内，尽量保证每个分区中数据量的均匀，而且分区与分区之间是有序的，一个分区中的元素肯定都是比另一个分区内的元素小或者大，但是分区内的元素是不能保证顺序的。
+
+**实现过程：**
+
+1. 先从整个 RDD 中抽取样本数据，将样本数据排序，计算出每个分区的最大 key 值，形成一个 Array[KEY] 类型的数组变量 rangeBounds
+2. 判断 key 在 rangeBounds 中所处的范围，给出该 key 值在下一个 RDD 中的分区 id 下标；该分区器要求 RDD 中的 KEY 类型必须是可以排序的
+
+#### 自定义分区
+
+```scala
+class MyPartitioner extends Partitioner {
+  // 返回创建出来的分区数
+  override def numPartitions: Int = ???
+  // 返回给定键的分区编号(0 到 numPartitions-1)
+  override def getPartition(key: Any): Int = ???
+  // 判断相等性的标准方法，Spark 需要用这个方法来检查分区器对象是否和其他分区器实例相同，这样 Spark 才可以判断两个 RDD 的分区方式是否相同
+  override def equals(obj: Any): Boolean = super.equals(obj)
+}
+```
+
+
+
+### 数据读取与保存
+
+Spark 的数据读取及数据保存可以从两个维度来作区分：**文件格式**以及**文件系统**
+
+文件格式分为：Text 文件、Json 文件、Csv 文件、Sequence 文件以及 Object 文件
+
+文件系统分为：本地文件系统、HDFS、HBASE 以及 数据库
+
+#### 文件类数据读取与保存
+
+**Text 文件**
+
+```scala
+// 数据读取
+sc.textFile(String)
+// 数据保存
+rdd.saveAsTextFile(String)
+```
+
+**Json 文件**
+
+**Sequence 文件**
+
+SequenceFile 文件是 Hadoop 用来存储二进制形式的 key-value 对而设计的一种平面文件（Flat File）。Spark 有专门用来读取 SequenceFile 的接口。在 SparkContext 中，可以调用 `SequenceFile[ keyClass, valueClass ](path)`
+
+> 注意：SequenceFile 文件只针对 PairRDD
+
+```scala
+// 将 RDD 保存为 Sequence 文件
+rdd.saveAsSequenceFile()
+// 读取 Sequence 文件
+sc.sequenceFile[Int,Int]()
+```
+
+**对象文件**
+
+对象文件是将对象序列化后保存的文件，采用 Java 的序列化机制
+
+```scala
+// 将 RDD 保存为 Object 文件
+rdd.saveAsObjectFile()
+// 读取 Object 文件
+sc.obectFile[Int]()
+```
+
+#### 文件系统类数据读取与保存
+
+**HDFS**
+
+**MySql 数据库连接**
+
+**HBase 数据库**
+
+
+
+### RDD 编程进阶
+
+#### 累加器
+
+累加器用来对信息进行聚合，通常在向 Spark 传递函数时，比如使用 map() 或者用 filter() 传条件时，可以使用驱动器程序中定义的变量，但是集群中运行的每个任务都会得到这些变量的一份新的副本，更新这些副本的值也不会影响驱动器中的对应变量。如果我们想实现所有分片处理时更新共享变量的功能，那么累加器可以实现我们想要的效果
+
+**系统累加器**
+
+```scala
+val notice = sc.textFile("")
+// 通过在驱动器中调用 SparkContext.accumulator(initialValue) 方法，创建出存有初始值的累加器
+val blanklines = sc.accumulator(0)
+// Spark 闭包里的执行器代码可以使用累加器的 += 方法增加累加器的值
+val tmp = notice.flatMap(line => {
+    if (line == "")
+    	blanklines += 1
+    line.split(" ")
+})
+// 驱动器程序可以调用累加器的 value 属性来访问累加器的值
+blanklines.value
+```
+
+> 注意：工作节点上的任务不能访问累加器的值。从这些任务的角度来看，累加器是一个只写的变量
+
+**自定义累加器**
+
+实现自定义累加器需要继承 AccumulatorV2 并重写方法
+
+#### 广播变量（调优策略）
+
+广播变量用来高效分发较大的对象。向所有工作节点发送一个较大的只读值，以供一个或多个 Spark 操作使用。
+
+```scala
+// 通过一个类型 T 的对象调用 SparkContext.broadcast 创建出一个 Broadcast[T] 对象。任何可序列化的类型都可以这么实现
+val broadcastVar = sc.broadcast(Array(1,2,3))
+// 通过 value 属性访问该对象的值
+broadcastVar.value
+// 变量只会发到各个节点一次，应作为只读值处理（修改这个值不会影响到别的节点）
+```
+
+
+
+### 扩展
+
+#### RDD 相关概念关系
+
+<img src="https://raw.githubusercontent.com/whn961227/images/master/data/20200804173812.png" style="zoom:33%;" />
+
+输入可能以多个文件的形式存储在 HDFS 上，每个 File 都包含了很多块（block），当 Spark 读取这些文件作为输入时，会根据具体数据格式对应的 InputFormat 进行解析，一般是将若干个 block 合并成一个输入分片，成为 InputSplit，注意 InputSplit 不能跨越文件。随后将为这些输入分片生成具体的 Task。InputSplit 与 Task 是一一对应的关系。随后这些具体的 Task 每个都会被分配到集群上的某个节点的某个 Executor 去执行
+
+1. 每个节点可以起一个或多个 Executor
+2. 每个 Executor 由若干 Core 组成，每个 Executor 的每个 Core 一次只能执行一个 Task
+3. 每个 Task 执行的结果就是生成了目标 RDD 的一个 Partition
+
+> 注意：这里的 core 是虚拟的 core 而不是机器的物理 CPU 核，可以理解为就是 Executor 的一个工作线程。而 Task 被执行的并发度 = Executor 数目 * 每个 Executor 核数
+
+至于 Partition 的数目：
+
+1. 对于数据读入阶段，例如 sc.textFile，输入文件被划分为多少 InputSplit 就会需要多少初始 Task
+2. 在 Map 阶段 Partition 数目保持不变
+3. 在 Reduce 阶段，RDD 的聚合会触发 shuffle 操作，聚合后的 RDD 的 Partition 数目跟具体操作有关，例如 repartition 操作会聚合成指定分区数，还有一些算子是可配置的
+
+RDD 在计算的时候，每个分区都会起一个 task，所以 RDD 的分区数目决定了总的 Task 数目。申请的计算节点（Executor）数目和每个计算节点核数，决定了你同一时刻可以并行执行的 task
+
+比如的RDD有100个分区，那么计算的时候就会生成100个task，你的资源配置为10个计算节点，每个两2个核，同一时刻可以并行的task数目为20，计算这个RDD就需要5个轮次。如果计算资源不变，你有101个task的话，就需要6个轮次，在最后一轮中，只有一个task在执行，其余核都在空转。如果资源不变，你的RDD只有2个分区，那么同一时刻只有2个task运行，其余18个核空转，造成资源浪费。这就是在spark调优中，增大RDD分区数目，增大任务并行度的做法。
+
+
+
+## Spark SQL
+
+### 概述
+
+#### 定义
+
+Spark SQL 是 Spark 用来处理结构化数据的一个模块，它提供了 2 个编程抽象：**DataFrame** 和 **DataSet**，并且作为分布式 SQL 查询引擎的作用
+
+Spark SQL 转换成 RDD，然后提交到集群执行，执行效率非常快
+
+#### 特点
+
+**易整合**
+
+**统一的数据访问方式**
+
+**兼容 Hive**
+
+**标准的数据连接**
+
+#### DataFrame 定义
+
+与 RDD 类似，DataFrame 也是一个分布式数据容器。然而 DataFrame 更像传统数据库的二维表格，除了**数据**以外，还记录数据的结构信息，即 **Schema**。同时，与 Hive 类似，DataFrame 也支持**嵌套数据类型**（struct，array 和 map）
+
