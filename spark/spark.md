@@ -543,3 +543,164 @@ Spark SQL 转换成 RDD，然后提交到集群执行，执行效率非常快
 
 与 RDD 类似，DataFrame 也是一个分布式数据容器。然而 DataFrame 更像传统数据库的二维表格，除了**数据**以外，还记录数据的结构信息，即 **Schema**。同时，与 Hive 类似，DataFrame 也支持**嵌套数据类型**（struct，array 和 map）
 
+<img src="https://raw.githubusercontent.com/whn961227/images/master/data/20200805091655.png" style="zoom: 25%;" />
+
+上图体现了 DataFrame 和 RDD 的区别。左侧的 RDD[Person] 虽然以 Person 为类型参数，但 Spark 框架本身不了解 Person 类的内部结构。而右侧的 DataFrame 却提供了详细的结构信息，使得 Spark SQL 可以清楚地知道该数据集中包含哪些列，每列的名称和类型各是什么。
+
+DataFrame 为数据提供了 Schema 的视图，可以把它当作数据库中的一张表来对待，DataFrame 也是懒执行的，性能比 RDD 要高，主要原因：
+
+优化的执行计划：查询计划通过 Spark catalyst optimiser 进行优化
+
+#### DataSet 定义
+
+1. 是 DataFrame API 的一个扩展，是 Spark 最新的数据抽象
+2. 用户友好的 API 风格，既具有类型安全检查也具有 DataFrame 的查询优化特性
+3. DataSet 支持编解码器，当需要访问非堆上的数据时可以避免反序列化整个对象，提高了效率
+4. 样例类被用来在 DataSet 中定义数据的结构信息，样例类中每个属性的名称直接映射到 DataSet 中的字段名称
+5. DataFrame 是 DataSet 的特例，DataFrame = DataSet[Row]，所以可以通过 as 方法将 DataFrame 转换为 DataSet。Row 是一个类型
+6. DataSet 是强类型的
+7. DataFrame 只是知道字段，但是不知道字段的类型，所以在执行这些操作的时候是没办法在编译的时候检查是否类型失败的，而 DataSet 不仅仅知道字段，而且知道字段类型，所以有更严格的错误检查
+
+
+
+### Spark SQL 编程
+
+#### SparkSession
+
+SparkSession 内部封装了 SparkContext，所以计算实际上是由 SparkContext 完成的
+
+#### DataFrame
+
+##### 创建
+
+```scala
+// 从 Spark 数据源创建
+val df = spark.read.json("")
+// 从 RDD 进行转换
+// 从 Hive Table 进行查询返回
+```
+
+##### SQL 风格语法（主要）
+
+```scala
+// 创建 DataFrame
+val df = spark.read.json("")
+// 对 df 创建临时表
+df.createOrReplaceTempView("people")
+// 通过 SQL 语句实现全表查询
+val sqlDF = spark.sql("select * from people")
+// 结果展示
+sqlDF.show
+```
+
+> 注意：临时表是 Session 范围内的，Session 退出后，表就失效了。如果想应用范围内有效，可以使用全局表。注意使用全局表时需要全路径访问
+
+```scala
+// 对于 df 创建全局表
+df.createGlobalTempView("people")
+// 通过 SQL 语句实现全表查询
+spark.sql("select * from global_temp.people").show()
+```
+
+##### DSL 风格语法（次要）
+
+```scala
+// 查看 DataFrame 的 Schema 信息
+df.printSchema
+```
+
+#####  RDD 转换为 DataFrame
+
+> 注意：如果需要 RDD 与 DF 或者 DS 之间操作，需要引入 import spark.implicits._ 【spark 不是包名，而是 SparkSession 对象的名称】
+
+```scala
+import spark.implicits._
+val peopleRDD = sc.textFile("")
+// 通过手动确定转换
+peopleRDD.map{x => val para = x.split(",");(para(0), para(1).trim.toInt)}.toDF("name", "age")
+```
+
+```scala
+// 通过反射确定（需要用到样例类）
+case class People(name:String, age:Int)
+// 根据样例类将 RDD 转换为 DataFrame
+peopleRDD.map{x => val para = x.split(",");People(para(0), para(1).trim.toInt)}.toDF
+```
+
+##### DataFrame 转换为 RDD
+
+```scala
+// 创建一个 DataFrame
+val df = spark.read.json("")
+// 将 DataFrame 转换为 RDD
+val dfToRDD = df.rdd
+```
+
+#### DataSet
+
+##### 创建
+
+```scala
+// 创建样例类
+case class Person(name:String, age:Long)
+// 创建 DataSet
+val caseClassDS = Seq(Person("Andy", 32)).toDS()
+```
+
+##### RDD 转换为 DataSet
+
+```scala
+// 创建 RDD
+val peopleRDD = sc.textFile("")
+// 创建样例类
+case class Person(name:String, age:Long)
+// 将 RDD 转换为 DataSet
+peopleRDD.map(x => val para = x.split(",");People(para(0), para(1).trim.toInt)}).toDS()
+```
+
+##### DataSet 转换为 RDD
+
+```scala
+// 创建一个 DataSet
+val DS = Seq(Person("Andy", 32)).toDS()
+// 将 DataSet 转换为 RDD
+DS.rdd
+```
+
+#### DataFrame 与 DataSet 的互操作
+
+#### RDD、DataFrame、DataSet
+
+**三者的共性**
+
+1. RDD、DataFrame、DataSet 都是 Spark 平台下的分布式弹性数据集，为处理超大型数据提供遍历
+2. 三者都有惰性机制，在进行创建、转换，不会立即执行，只有在遇到 Action 时，才会执行
+3. 三者都会根据 Spark 的内存情况自动缓存运算，这样即使数据量很大，也不用担心会内存溢出
+4. 三者都有 partition 的概念
+5. 三者有许多共同的函数，如 filter、排序等
+6. 在对 DataFrame 和 DataSet 进行操作需要这个包支持 import spark.implicits._
+7. DataFrame 和 DataSet 均可使用模式匹配获取各个字段的值和类型
+
+**三者的区别**
+
+#### 用户自定义函数
+
+
+
+## Spark Streaming
+
+### 概述
+
+#### 定义
+
+Spark Streaming 用于**流式数据**的处理。Spark Streaming 支持的数据输入源很多，例如 Kafka、Flume 和简单的 TCP 套接字等。数据输入后可以用 Spark 的高度抽象源语，如 map、reduce 等进行计算。结果也能保存在很多地方，如 HDFS，数据库等
+
+Spark Streaming 使用**离散化流 DStream** 作为抽象表示。DStream 是随时间推移而收到的数据的序列。在内部，每个**时间区间**收到的数据都作为 RDD 存在，而 DStream 是由这些 RDD 所组成的序列
+
+#### 架构
+
+<img src="https://raw.githubusercontent.com/whn961227/images/master/data/20200805165701.png" style="zoom:25%;" />
+
+### DStream 转换
+
+#### 无状态
