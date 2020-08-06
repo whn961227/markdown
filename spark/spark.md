@@ -703,4 +703,50 @@ Spark Streaming 使用**离散化流 DStream** 作为抽象表示。DStream 是�
 
 ### DStream 转换
 
+DStream 上的原语于 RDD 类似，分为 Transformations（转换）和 Output Operations（输出）两种，此外转换操作中还有一些比较特殊的原语，如 updateStateByKey()、transform() 以及各种 Window 相关的原语
+
 #### 无状态
+
+无状态转化操作就是把简单的 RDD 转化操作应用到每个批次上，也就是转化 DStream 中的每一个 RDD。部分无状态转化操作列在了下表中
+
+> 注意，针对键值对的 DStream 转化操作（比如 reduceByKey()）要添加 import StreamingContext._ 才能在 Scala 中使用
+
+<img src="https://raw.githubusercontent.com/whn961227/images/master/data/20200806095305.png" style="zoom: 33%;" />
+
+尽管这些函数看起来像作用在整个流上一样，但事实上每个 DStream 在内部是由许多 RDD（批次）组成，且无状态转化操作时分别应用到每个 RDD 上的
+
+#### 有状态转化操作（重点）
+
+##### UpdateStateByKey
+
+```scala
+object WorldCount {
+  def main(args: Array[String]) {
+      val conf = new SparkConf().setMaster("local[2]").setAppName("NetworkWordCount")
+      val ssc = new StreamingContext(conf, Seconds(3))
+      ssc.sparkContext.setCheckpointDir("cp")
+      
+      val lines = ssc.socketTextStream("localhost", 9999)
+      lines.flatMap(_.split(" ")).map(_,1L)
+           // updateStateByKey 是有状态计算方法
+      	   // 第一个参数表示 相同 key 的 value 的集合
+      	   // 第二个参数表示 相同 key 的缓冲区的数据
+      	   .updateStateByKey[Long](
+           	(seq:Seq[Long], buffer:Option[Long]) => {
+                val newBufferValue = buffer.getOrElse(0) + seq.sum
+                Option(newBufferValue)
+            }
+           ).print()
+      ssc.start()
+      ssc.awaitTermination()
+  }
+}
+```
+
+##### Window Operations
+
+Window Operations 可以设置窗口的大小和滑动窗口的间隔来动态的获取当前 Streaming 的允许状态。基于窗口的操作会在一个比 StreamingContext 的批次间隔更长的时间范围内，通过整合多个批次的结果，计算出整个窗口的结果
+
+> 注意：所有基于窗口的操作都需要两个参数，分别为窗口时长以及滑动步长，两者都必须是 StreamingContext 的批次间隔的整数倍
+
+窗口时长控制每次计算最近的多少个批次的数据，其实就是最近的 windowDuration/batchInterval 个批次。滑动步长的默认值与批次间隔相等，用来控制对新的 DStream 进行计算的间隔
