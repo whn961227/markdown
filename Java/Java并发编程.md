@@ -2,11 +2,11 @@
 
 ### 并行与并发
 
-单核CPU下，线程实际是 **串行执行** 的。任务调度器将CPU的时间片分给不同的线程使用
+单核 CPU 下，线程实际是 **串行执行** 的。任务调度器将 CPU 的时间片分给不同的线程使用
 
-一般会将这种线程轮流使用CPU的做法称为 **并发**，concurrent
+一般会将这种线程轮流使用 CPU 的做法称为 **并发**，concurrent
 
-多核CPU下，每个核都可以调度运行线程，这时候线程是 **并行** 的
+多核 CPU 下，每个核都可以调度运行线程，这时候线程是 **并行** 的
 
 #### 结论
 
@@ -14,7 +14,7 @@
 2. 多核CPU可以并行跑多个线程，但能否提高程序运行效率还是要分情况的
    * 有的任务，经过精心设计，将任务拆分，并行执行，当然可以提高程序的运行效率。但不是所有计算任务都能拆分
    * 也不是所有任务都需要拆分，任务的目的不同，拆分和效率就没什么意义
-3. IO操作不占用CPU，只是一般拷贝文件使用的是 **阻塞IO**， 这时相当于线程虽然不用CPU，但需要一直等待IO结束，没能充分利用线程。所以才有 **非阻塞IO** 和 **异步IO** 的优化
+3. IO 操作不占用 CPU，只是一般拷贝文件使用的是 **阻塞 IO**， 这时相当于线程虽然不用 CPU，但需要一直等待 IO 结束，没能充分利用线程。所以才有 **非阻塞 IO** 和 **异步 IO** 的优化
 
 
 
@@ -29,7 +29,7 @@
 
 ### 创建和运行线程
 
-* **直接使用Thread**
+* **直接使用 Thread**
 
   ```java
   // 创建线程对象
@@ -42,7 +42,7 @@
   t.start();
   ```
 
-* **使用Runnable配合Thread**
+* **使用 Runnable 配合 Thread**
 
   ```java
   Runnable runnable = new Runnable() {
@@ -56,7 +56,7 @@
   t.start();
   ```
 
-* **FutureTask配合Thread**
+* **FutureTask 配合 Thread**
 
   ```java
   // 创建任务对象
@@ -65,7 +65,7 @@
       return 100;
   });
   
-  // 参数1 是任务对象， 参数2 是线程名字 
+  // 参数 1 是任务对象， 参数 2 是线程名字 
   new Thread(task3, "t3").start();
   
   // 主线程阻塞，同步等待 task 执行完毕的结果
@@ -88,10 +88,10 @@
 
 以下原因导致CPU不再执行当前线程，转而执行另外一个线程：
 
-* 线程的CPU时间片用完
-* 垃圾回收
-* 有更高优先级的线程需要运行
-* 线程自己调用了sleep、yield、wait、join、park、synchronized、lock等方法
+* 线程的 CPU **时间片用完**
+* **垃圾回收**
+* 有**更高优先级的线程**需要运行
+* 线程自己调用了 sleep、yield、wait、join、park、synchronized、lock 等方法
 
 当上下文切换发生时，需要由操作系统保存当前线程的状态，并恢复另一个线程的状态，Java中对应的概念就是**程序计数器**，它的作用是记住下一条jvm指令的执行地址，是线程私有的
 
@@ -100,7 +100,7 @@
 
 
 
-### Start与Run
+### Start 与 Run
 
 ```java
 public static void main(String[] args) {
@@ -119,14 +119,14 @@ public static void main(String[] args) {
 
 
 
-### sleep与yield
+### sleep 与 yield
 
 #### sleep
 
-1. 调用sleep会让当前线程从 Running 进入 **Timed Waiting** 状态
+1. 调用 sleep 会让当前线程从 Running 进入 **Timed Waiting** 状态
 2. 其他线程可以使用 interrupt 打断正在睡眠的线程，这时 sleep 方法会抛出 InterruptedException
 3. 睡眠结束后的线程未必会立刻得到执行
-4. 建议用TimeUnit的sleep代替Thread的sleep来获得更好的可读性
+4. 建议用 TimeUnit 的 sleep 代替 Thread 的 sleep 来获得更好的可读性
 
 #### yield
 
@@ -138,13 +138,13 @@ public static void main(String[] args) {
 ### 线程优先级
 
 * 线程优先级会提示（hint）调度器优先调度该线程，但它仅仅是一个提示，调度器可以忽略它
-* 如果CPU比较忙，那么优先级高的线程会获得更多的时间片，但CPU闲时，优先级几乎没作用
+* 如果 CPU 比较忙，那么优先级高的线程会获得更多的时间片，但 CPU 闲时，优先级几乎没作用
 
 
 
- ### join方法详解
+ ### join 方法详解
 
-等待线程运行结束，用于线程同步
+**等待线程运行结束，用于线程同步**
 
 ```java
 static int r = 0;
@@ -173,20 +173,20 @@ private static void test1() throws InterruptedException {
 
 解决方法
 
-* 用sleep（不知道t1线程执行时间，不推荐）
-* 用join，加在t1.start()之后
+* 用 sleep（不知道 t1 线程执行时间，不推荐）
+* 用 join，加在 t1.start() 之后
 
 
 
-### Inerrupt方法详解
+### Inerrupt 方法详解
 
-#### 打断sleep，wait，join的线程
+#### 打断 sleep，wait，join 的线程
 
-清空打断状态，以异常的方式表示被打断，打断标记为 false
+**清空打断状态**，以异常的方式表示被打断，打断标记为 false
 
 #### 打断正常运行的线程
 
-不会清空打断状态，打断标记为 true，由被打断线程自己决定是否停止运行，可以通过打断标记来判断
+**不会清空打断状态**，打断标记为 true，由被打断线程自己决定是否停止运行，可以通过打断标记来判断
 
 #### 打断 park 线程
 
@@ -196,9 +196,9 @@ private static void test1() throws InterruptedException {
 
 
 
-### isInterrupted和interrupted
+### isInterrupted 和 interrupted
 
-isInterrupted判断打断标记，不会清空打断状态；interrupted判断打断标记，清空打断状态
+isInterrupted 判断打断标记，**不会清空打断状态**；interrupted 判断打断标记，**清空打断状态**
 
 
 
@@ -241,9 +241,9 @@ class TwoPhaseTermination {
 
 ### 主线程与守护线程
 
-默认情况下，Java进程需要等待所有线程都运行结束，才会结束。有一种特殊的线程叫做守护线程，只要其他非守护线程运行结束了，即时守护线程的代码没有执行完，也会强制结束
+默认情况下，Java 进程需要等待所有线程都运行结束，才会结束。有一种特殊的线程叫做守护线程，只要其他非守护线程运行结束了，即使守护线程的代码没有执行完，也会强制结束
 
-> 垃圾回收线程就是守护线程
+> **垃圾回收线程就是守护线程**
 >
 > Tomcat中的Acceptor和Poller线程都是守护线程，所以Tomcat接收到shutdown命令后，不会等待他们处理完当前请求
 
@@ -274,7 +274,7 @@ class TwoPhaseTermination {
   * 多个线程读共享资源其实也没有问题
   * 在多个线程对共享资源**读写**操作时发生指令交错，就会出现问题
 
-* 一段代码块内如果存在对共享资源的多线程读写操作，称这段代码块为**临界区**
+* 一段代码块内**如果存在对共享资源的多线程读写操作，称这段代码块为临界区**
 
 #### 竞态条件
 
@@ -289,20 +289,20 @@ class TwoPhaseTermination {
 
 
 
-### synchronized解决方案
+### synchronized 解决方案
 
 synchronized，俗称 **对象锁** ，采用互斥的方式让同一时刻至多只有一个线程能持有 **对象锁** ，其他线程再想获取这个 **对象锁** 时就会被阻塞住。这样就能保证拥有锁的线程可以安全的执行临界区内的代码，不用担心线程上下文切换
 
->虽然java中互斥和同步都可以采用synchronized关键字来完成，但它们还是有区别的：
+>虽然 java 中互斥和同步都可以采用 synchronized 关键字来完成，但它们还是有区别的：
 >
 >* 互斥是保证临界区的竞态条件发生，同一时刻只能有一个线程执行临界区代码
 >* 同步是由于线程执行的先后、顺序不同，需要一个线程等待其他线程运行到某个点
 
 实际是用 **对象锁** 保证了临界区内代码的原子性，临界区内的代码对外是不可分割的，不会被线程切换所打断
 
-* 修饰实例方法，对当前实例对象this加锁
-* 修饰静态方法，对当前类的Class对象加锁
-* 修饰代码块，指定一个加锁的对象，给对象加锁
+* 修饰**实例方法**，对**当前实例对象 this 加锁**
+* 修饰**静态方法**，对**当前类的Class对象加锁**
+* 修饰**代码块**，**指定一个加锁的对象，给对象加锁**
 
 
 
@@ -331,8 +331,8 @@ synchronized，俗称 **对象锁** ，采用互斥的方式让同一时刻至�
 <img src="https://raw.githubusercontent.com/whn961227/images/master/data/image-20200713104455729.png" alt="image-20200713104455729" style="zoom: 67%;" />
 
 * 对象头
-  * Mark Word（标记字段）：默认存储对象的 hashcode，分代年龄和锁标志位信息。它会根据对象的状态复用自己的存储空间，也就是说在运行期间 Mark Word 里存储的数据会随着 **锁标志位** 的变化而变化
-  * Klass Point（类型指针）：对象指向它的类元数据的指针，虚拟机通过这个指针来确定这个对象是哪个类的实例
+  * **Mark Word**（标记字段）：默认存储对象的 hashcode，分代年龄和锁标志位信息。它会根据对象的状态复用自己的存储空间，也就是说在运行期间 Mark Word 里存储的数据会随着 **锁标志位** 的变化而变化
+  * **Klass Point**（类型指针）：**对象指向它的类元数据的指针**，虚拟机通过这个指针来确定这个对象是哪个类的实例
 * 实例数据
   * 这部分主要是存放类的数据信息，父类的信息
 * 对齐填充
@@ -357,37 +357,37 @@ synchronized，俗称 **对象锁** ，采用互斥的方式让同一时刻至�
 
 
 
-### Synchronized原理进阶
+### Synchronized 原理进阶
 
 #### 轻量级锁
 
 如果一个对象虽然有多线程访问，但多线程访问的时间是错开的（也就是没有竞争），那么可以使用轻量级锁来优化
 
-* 创建锁记录（Lock Record）对象，每个线程对应的栈帧都会包含一个 **锁记录** 的结构，内部可以存储锁定对象的 Mark Word
+* 创建**锁记录**（Lock Record）对象，每个线程对应的栈帧都会包含一个 **锁记录** 的结构，内部可以存储锁定对象的 Mark Word
 
 ![](https://raw.githubusercontent.com/whn961227/images/master/data/20200712225008.png)
 
-* 让锁记录中的 Object reference 指向锁对象，尝试使用 cas 替换 Object 的 Mark Word，将 Mark Word 的值存入锁记录
+* 让锁记录中的 **Object reference 指向锁对象**，尝试使用 cas 替换 Object 的 Mark Word，将 Mark Word 的值存入锁记录
 
   ![image-20200712225249200](https://raw.githubusercontent.com/whn961227/images/master/data/image-20200712225249200.png)
 
-* 如果 cas 替换成功，对象头中存储了锁记录地址和状态 00，表示由该线程给对象加锁
+* 如果 cas 替换成功，**对象头中存储了锁记录地址和状态 00**，表示由该线程给对象加锁
 
   ![](https://raw.githubusercontent.com/whn961227/images/master/data/20200712225431.png)
 
 * 如果 cas 失败，有两种情况
-  * 如果是其他线程已经持有了该 Object 的轻量级锁，这时表明有竞争，进入锁膨胀过程
-  * 如果是自己执行了 synchronized 锁重入，那么再添加一条 Lock Record 作为重入的计数
+  * 如果是其他线程已经持有了该 Object 的轻量级锁，这时表明有**竞争**，进入**锁膨胀**过程
+  * 如果是自己执行了 synchronized **锁重入**，那么**再添加一条 Lock Record 作为重入的计数**
 
-![image-20200712225746648](https://raw.githubusercontent.com/whn961227/images/master/data/image-20200712225746648.png)
+<img src="https://raw.githubusercontent.com/whn961227/images/master/data/image-20200712225746648.png" alt="image-20200712225746648" style="zoom:80%;" />
 
-* 当退出 synchronized 代码块（解锁时）如果有取值为 null 的锁记录，表示有重入，这时重置锁记录，表示重入计数减 1
+* 当退出 synchronized 代码块（解锁时）如果有取值为 null 的锁记录，表示有重入，这时重置锁记录，表示**重入计数减 1**
 
-![image-20200712225923341](https://raw.githubusercontent.com/whn961227/images/master/data/image-20200712225923341.png)
+<img src="https://raw.githubusercontent.com/whn961227/images/master/data/image-20200712225923341.png" alt="image-20200712225923341" style="zoom: 80%;" />
 
-* 当退出 synchronized 代码块（解锁时）锁记录的值不为 null，这时使用 cas 将 Mark Word 的值恢复给对象头
+* 当退出 synchronized 代码块（解锁时）锁记录的值不为 null，这时**使用 cas 将 Mark Word 的值恢复给对象头**
   * 成功，则解锁成功
-  * 失败，说明轻量级锁进行了锁膨胀或已经升级为重量级锁，进入重量级锁解锁流程
+  * 失败，说明轻量级锁进行了锁膨胀或已经升级为重量级锁，进入**重量级锁解锁**流程
 
 #### 锁膨胀
 
@@ -399,12 +399,12 @@ synchronized，俗称 **对象锁** ，采用互斥的方式让同一时刻至�
 
 * 这时 Thread-1 加轻量级锁失败，进入锁膨胀流程
 
-  * 为 Object 对象申请 Monitor 锁，让 Object 指向重量级锁地址
-  * 然后自己进入 Monito r的 EntryList Blocked 状态
+  * **为 Object 对象申请 Monitor 锁**，**让 Object 指向重量级锁地址**
+  * 然后**自己进入 Monitor 的 EntryList Blocked 状态**
 
-  ![image-20200713094510276](https://raw.githubusercontent.com/whn961227/images/master/data/image-20200713094510276.png)
+  <img src="https://raw.githubusercontent.com/whn961227/images/master/data/image-20200713094510276.png" alt="image-20200713094510276" style="zoom: 50%;" />
 
-* 当 Thread-0 退出同步块解锁时，使用 CAS 将 Mark Word 的值恢复给对象头，失败。这时会进入重量级锁解锁流程，即按照 Monitor 地址找到 Monitor 对象，设置 Owner 为 null，唤醒 EntryList 中 Blocked 线程
+* 当 Thread-0 退出同步块解锁时，使用 CAS 将 Mark Word 的值恢复给对象头，失败。这时会进入重量级锁解锁流程，即**按照 Monitor 地址找到 Monitor 对象**，**设置 Owner 为 null**，**唤醒 EntryList 中 Blocked 线程**
 
 #### 自旋优化
 
