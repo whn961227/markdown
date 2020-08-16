@@ -428,10 +428,10 @@ Java 6 中引入了偏向锁来做进一步优化：只有第一次使用 CAS �
 
 ##### 撤销-调用对象 hashCode
 
-调用了对象的hashCode，但偏向锁的对象MarkWord中存储的是线程id，如果调用hashCode会导致偏向锁被撤销
+调用了对象的 hashCode，但偏向锁的对象 MarkWord 中存储的是线程 id，如果调用 hashCode 会导致偏向锁被撤销
 
-* 轻量级锁会在 **锁记录** 中记录hashCode
-* 重量级锁会在 **Monitor** 中记录hashCode
+* 轻量级锁会在 **锁记录** 中记录 hashCode
+* 重量级锁会在 **Monitor** 中记录 hashCode
 
 ##### 撤销-其他线程使用对象
 
@@ -457,26 +457,26 @@ Java 6 中引入了偏向锁来做进一步优化：只有第一次使用 CAS �
 
 <img src="https://raw.githubusercontent.com/whn961227/images/master/data/20200714105927.png" style="zoom:33%;" />
 
-* Owner 线程发现条件不满足，调用 wait 方法，即可进入 WaitSet 变为 WAITING状态
+* Owner 线程发现条件不满足，调用 wait 方法，即可进入 WaitSet 变为 WAITING 状态
 * Blocked 和 Waiting 的线程都处于阻塞状态，不占用 CPU 时间片
-* Blocked 线程会在 Owner 线程释放锁时唤醒
-* WAITING 线程会在 Owner 线程调用 notify 或 notifyAll 时唤醒，但唤醒后不意味着立刻获得锁，仍需进入 EntryList 重新竞争
+* **Blocked 线程会在 Owner 线程释放锁时唤醒**
+* **WAITING 线程会在 Owner 线程调用 notify 或 notifyAll 时唤醒**，但**唤醒后**不意味着立刻获得锁，**仍需进入 EntryList 重新竞争**
 
 #### API介绍
 
-* obj.wait() 让进入 object monitor的线程到 waitSet 等待
-* obj.notify() 在 object上 正在 waitSet 等待的线程中挑一个唤醒
-* obj.notifyAll() 让 object 上正在 waitSet 等待的线程全部唤醒
+* obj.wait() 让进入 object monitor 的线程到 waitSet 等待
+* obj.notify() 在 object上 正在 waitSet 等待的线程中**挑一个唤醒**
+* obj.notifyAll() 让 object 上正在 waitSet 等待的线程**全部唤醒**
 
-属于 Object 对象的方法，必须获得此对象的锁，才能调用这几个方法
+属于 Object 对象的方法，**必须获得此对象的锁**，才能调用这几个方法
 
 
 
-### sleep(long n)和wait(long n)的区别
+### sleep(long n) 和 wait(long n) 的区别
 
-1. sleep是 Thread 方法，而 wait 是 Object 的方法
-2. sleep 不需要强制和 synchronized 配合使用，但 wait 需要和 synchronized 一起用
-3. sleep 在睡眠的同时，不会释放对象锁，但 wait 在等待的时候会释放对象锁
+1. **sleep**是 **Thread** 方法，而 **wait** 是 **Object** 的方法
+2. sleep **不需要**强制和 synchronized 配合使用，但 wait **需要**和 synchronized 一起用
+3. **sleep** 在睡眠的同时，**不会释放对象锁**，但 **wait** 在等待的时候会**释放对象锁**
 4. 线程调用两个方法都是进入 TIMED-WAITING 状态
 
 
@@ -655,7 +655,7 @@ class GuardedObject {
 * 与前面的保护性暂停中的 GuardObject 不同，不需要产生结果和消费结果的线程一一对应
 * 消费队列可以用来平衡生产和消费的线程资源
 * 生产者仅负责产生结果数据，不关心数据该如何处理，而消费者专心处理结果数据
-* 消息队列是有容量限制的，满时不会再加入数据，空时不会再消耗数据
+* **消息队列是有容量限制的，满时不会再加入数据，空时不会再消耗数据**
 * JDK 中各种阻塞队列，采用的就是这种模式
 
 ```java
@@ -734,20 +734,20 @@ final class Message {
 
 
 
-### Park与Unpark
+### Park 与 Unpark
 
 ```java
 LockSupport.park(); // 暂停当前线程
 LockSupport.unpark(); // 恢复某个线程的运行
 ```
 
-**与Object的wait与notify相比**
+**与 Object 的 wait 与 notify 相比**
 
 * wait，notify 和 notifyAll 必须配合 Object Monitor 一起使用，而 park，unpark不必
 * park 与 unpark 是以线程为单位来 **阻塞** 和 **唤醒** 线程，而 notify 只能随机唤醒一个等待线程，notifyAll 是唤醒所有等待线程
 * park 与 unpark 可以先 unpark，而 wait 与 notify 不能先 notify
 
-#### 原理之park & unpark
+#### 原理之 park & unpark
 
 每个线程都有自己的一个 Parker 对象，由三部分组成 `_counter`，`_cond`，`_mutex`
 
@@ -756,7 +756,7 @@ LockSupport.unpark(); // 恢复某个线程的运行
 1. 当前线程调用 Unsafe.park() 方法
 2. 检查 _counter，本情况为 0，这时，获得 _mutex 互斥锁
 3. 线程进入 _cond 条件变量阻塞
-4. 设置 _counter=0
+4. 设置 _counter = 0
 
 <img src="https://raw.githubusercontent.com/whn961227/images/master/data/20200714165624.png" style="zoom: 25%;" />
 
@@ -790,9 +790,9 @@ LockSupport.unpark(); // 恢复某个线程的运行
 
 一个线程需要同时获取多把锁，这时就容易发生死锁
 
-t1线程 获得 A对象 锁，接下来想获取 B对象 的锁
+t1 线程 获得 A 对象 锁，接下来想获取 B 对象 的锁
 
-t2线程 获得 B对象 锁，接下来想获取 A对象 的锁
+t2 线程 获得 B 对象 锁，接下来想获取 A 对象 的锁
 
 ```java
 Object A = new Object();
@@ -830,7 +830,7 @@ t2.start();
 
 #### 饥饿
 
-一个线程由于优先级太低，始终得不到CPU调度执行，也不能够结束
+一个线程由于优先级太低，始终得不到 CPU 调度执行，也不能够结束
 
 
 
@@ -881,7 +881,7 @@ boolean tryLock(long, TimeUnit)
 
 #### 公平锁
 
-ReentrantLock默认是不公平的
+ReentrantLock 默认是不公平的
 
 #### 条件变量
 
@@ -894,8 +894,8 @@ ReentrantLock 的条件变量比 synchronized 强大之处在于，它支持多�
 
 使用流程
 
-* await 前需要获得锁
-* await 执行后，会释放锁，进入 conditionObject 等待
+* **await 前需要获得锁**
+* await 执行后，会**释放锁**，进入 **conditionObject** 等待
 * await 的线程被唤醒(signal()、signalAll())（或打断、或超时）去重新竞争 lock 锁
 * 竞争 lock 锁成功后，从 await 后继续执行
 
@@ -1145,14 +1145,14 @@ class ParkUnpark {
 
 
 
-### Volatile原理
+### Volatile 原理
 
-volatile 的底层实现原理是内存屏障
+volatile 的底层实现原理是**内存屏障**
 
-* 对 volatile 变量的写指令后会加入写屏障
-* 对 volatile 变量的读指令前会加入读屏障
+* 对 volatile 变量的**写指令后会加入写屏障**
+* 对 volatile 变量的**读指令前会加入读屏障**
 
-用来修饰成员变量和静态成员变量，可以避免线程从自己的工作缓存中查找变量的值，必须到主存中获取值，线程操作volatile变量都是直接操作主存
+用来修饰成员变量和静态成员变量，可以避免线程从自己的工作缓存中查找变量的值，必须到主存中获取值，线程操作 volatile 变量都是直接操作主存
 
 仅用在一个写线程，多个读线程的情况
 
@@ -1166,26 +1166,26 @@ volatile 的底层实现原理是内存屏障
 
 #### 如何保证可见性
 
-* 写屏障保证在该屏障之前，对共享变量的改动，都同步到主存中
-* 读屏障保证在该屏障之后，对共享变量的读取，加载的是主存中的最新数据
+* **写屏障保证在该屏障之前，对共享变量的改动，都同步到主存中**
+* **读屏障保证在该屏障之后，对共享变量的读取，加载的是主存中的最新数据**
 
 #### 如何保证有序性
 
-* 写屏障会确保指令重排序时，不会将写屏障之前的代码排在写屏障之后
-* 读屏障会确保指令重排序时，不会将读屏障之后的代码排在读屏障之前
+* 写屏障会确保指令重排序时，**不会将写屏障之前的代码排在写屏障之后**
+* 读屏障会确保指令重排序时，**不会将读屏障之后的代码排在读屏障之前**
 
 **不能解决指令交错**：
 
 * 写屏障仅仅时保证之后的读能够读到最新结果，但不能保证读跑到它前面去
 * 而有序性的保证也只是保证了本线程内相关代码不被重排序
 
-#### Volatile底层
+#### Volatile 底层
 
 当多个处理器的任务都涉及到同一块主内存区域时，将可能导致各自的缓存数据不一致，为了解决一致性问题，需要各个处理器访问缓存时遵循一些协议
 
-#### Intel的MESI（缓存一致性）协议
+#### Intel 的 MESI（缓存一致性）协议
 
-当CPU写数据时，如果发现操作的变量是共享变量，即在其他CPU中也存在该变量的副本，会发出信号通知其他CPU将该变量的缓存行置为无效状态，因此当其他CPU需要读取这个变量时，发现自己缓存中缓存该变量的缓存行是无效的，那么它就会内存重新读取
+当 CPU 写数据时，如果发现操作的变量是共享变量，即在其他 CPU 中也存在该变量的副本，会发出信号通知其他 CPU 将该变量的缓存行置为无效状态，因此当其他 CPU 需要读取这个变量时，发现自己缓存中缓存该变量的缓存行是无效的，那么它就会内存重新读取
 
 #### 嗅探
 
@@ -1193,7 +1193,7 @@ volatile 的底层实现原理是内存屏障
 
 ##### 缺点
 
-由于volatile的MESI缓存一致性协议，需要不断的从主内存嗅探和cas不断循环，无效交互会导致总线带宽达到峰值，所以不要大量使用volatile
+由于 volatile 的 MESI 缓存一致性协议，需要不断的**从主内存嗅探**和 cas 不断循环，无效交互会导致总线带宽达到峰值，所以不要大量使用 volatile
 
 
 
@@ -1280,13 +1280,13 @@ class TwoPhaseTermination {
 
 
 
-### JMM（Java内存模型）
+### JMM（Java 内存模型）
 
 所有的共享变量都存储于主内存，每一个线程有自己的工作内存，线程的工作内存，保留了被线程使用的变量的工作副本
 
-线程对变量的所有的操作（读，取）都必须在工作内存中完成，而不能直接读写主内存中的变量
+**线程对变量的所有的操作（读，取）都必须在工作内存中完成**，而不能直接读写主内存中的变量
 
-不同线程之间不能直接访问对方工作内存中的变量，线程间变量的值的传递需要通过主内存中转完成
+**不同线程之间不能直接访问对方工作内存中的变量**，线程间变量的值的传递需要**通过主内存中转**完成
 
 **本地内存和主内存的关系**
 
@@ -1595,7 +1595,7 @@ CAS 必须借助 volatile 才能读取到共享变量的最新值来实现 **比
 
 主线程仅能判断出共享变量的值与最初值是否相同，不能感知到这种从 A 改为 B 再改回 A 的情况，如果主线程希望：
 
-只要有其他线程 **改动了** 共享变量，那么自己的 cas 就算失败，这时，仅比较值是不够的，需要再加一个版本号
+只要有其他线程 **改动了** 共享变量，那么自己的 cas 就算失败，这时，仅比较值是不够的，需要再加一个**版本号**
 
 
 
@@ -1905,8 +1905,8 @@ public static ExecutorService newFixedThreadPool(int nThreads) {
 
 特点：
 
-* 核心线程数 == 最大线程数（没有救急线程被创建），因此无需超时时间
-* 阻塞队列是无界的，可以放任意数量的任务
+* **核心线程数 == 最大线程数（没有救急线程被创建），因此无需超时时间**
+* 阻塞队列是**无界**的，可以放任意数量的任务
 
 > 适用于任务量已知，相对耗时的任务
 
@@ -1923,8 +1923,8 @@ public static ExecutorService newCachedThreadPool() {
 特点：
 
 * 核心线程数是 0，最大线程数是 Integer.MAX_VALUE，救急线程的空闲生存时间是 60s，意味着
-  * 全是救急线程（60s 后可以回收）
-  * 救急线程可以无限创建
+  * **全是救急线程（60s 后可以回收）**
+  * **救急线程可以无限创建**
 * 队列采用了 SynchronousQueue 实现特点是，它没有容量，没有线程来取是放不进去的
 
 > 整个线程池表现为线程数会根据任务量不断增加，没有上限，当任务执行完毕，空闲 1 分钟后释放线程
@@ -1945,7 +1945,7 @@ public static ExecutorService newSingleThreadExecutor() {
 
 使用场景：
 
-希望多个任务排队执行。线程数固定为 1，任务数多于 1 时，会放入无界队列排队。任务执行完毕，这唯一的线程也不会被释放
+希望多个任务排队执行。**线程数固定为 1**，任务数多于 1 时，会放入无界队列排队。任务执行完毕，这唯一的线程也不会被释放
 
 区别：
 
@@ -1961,15 +1961,15 @@ public static ExecutorService newSingleThreadExecutor() {
 
 #### 概述
 
-全称是 AbstractQueuedSynchronized，是阻塞式锁和相关的同步器工具的框架
+全称是 AbstractQueuedSynchronized，是**阻塞式锁和相关的同步器工具的框架**
 
 特点：
 
-* 用 state 属性来表示资源的状态（分独占模式和共享模式），子类需要定义如何维护这个状态，控制如何获取锁和释放锁
+* 用 **state 属性**来**表示资源的状态**（分独占模式和共享模式），子类需要定义如何维护这个状态，控制如何获取锁和释放锁
   * getState - 获取 state 状态
   * setState - 设置 state 状态
-  * compareAndSetState - 乐观锁机制设置 state 状态
-  * 独占模式是只有一个线程能够访问资源，而共享模式可以允许多个线程访问资源
+  * **compareAndSetState** - 乐观锁机制设置 state 状态
+  * **独占模式**是**只有一个线程能够访问资源**，而**共享模式**可以**允许多个线程访问资源**
 * 提供了基于 FIFO 的等待队列，类似于 Monitor 的 EntryList
 * 条件变量来实现等待、唤醒机制，支持多个条件变量，类似于 Monitor 的 WaitSet
 
@@ -2052,7 +2052,7 @@ class MyLock implements Lock {
 
 ##### 加锁解锁流程
 
-先从构造器开始看，默认为非公平锁实现
+先从构造器开始看，默认为**非公平锁**实现
 
 ```java
 public ReentrantLock() {
@@ -2060,7 +2060,7 @@ public ReentrantLock() {
 }
 ```
 
-NonfairSync 继承自 AQS
+**NonfairSync 继承自 AQS**
 
 没有竞争时
 
@@ -2072,16 +2072,16 @@ NonfairSync 继承自 AQS
 
 Thread-1 执行了
 
-1. CAS 尝试将 state 由 0 改为 1，结果失败
-2. 进入 tryAcquire 逻辑，这时 state 已经是 1，结果仍然失败
-3. 接下来进入 addWaiter 逻辑，构造 Node 队列
-   * 图中黄色三角表示该 Node 的 waitStatus 状态，其中 0 为默认正常状态
+1. CAS 尝试**将 state 由 0 改为 1**，结果**失败**
+2. 进入 **tryAcquire 逻辑**，这时 state 已经是 1，结果仍然**失败**
+3. 接下来进入 **addWaiter 逻辑**，**构造 Node 队列**
+   * 图中黄色三角表示该 Node 的 **waitStatus 状态**，其中 0 为默认正常状态
    * Node 的创建是懒惰的
-   * 其中第一个 Node 称为 Dummy（哑元）或哨兵，用来占位，并不关联线程
+   * 其中**第一个 Node 称为 Dummy（哑元）或哨兵**，用来**占位**，并不关联线程
 
 ![image-20200719104259547](https://raw.githubusercontent.com/whn961227/images/master/data/image-20200719104259547.png)
 
-当前线程进入 acquireQueued 逻辑
+当前线程进入 **acquireQueued 逻辑**
 
 1. acquireQueued 会在第一个死循环中不断尝试获得锁，失败后进入 park 阻塞
 2. 如果自己是紧邻着 head（排第二位），那么再次 tryAcquire  尝试获取锁，当然这时 state 仍为 1，失败
@@ -2177,7 +2177,7 @@ static final class NonfairSync extends Sync {
 
  #### 条件变量实现原理
 
-每个条件变量其实就对应着一个等待队列，其实现类是 ConditionObject
+**每个条件变量其实就对应着一个等待队列**，其实现类是 ConditionObject
 
 ##### await流程
 
@@ -2267,7 +2267,7 @@ Thread-1 释放锁，进入 unlock 流程
 
 ### ThreadLocal
 
-**作用：**主要是做数据隔离，填充的数据只属于当前线程，变量的数据对别的线程而言是相对隔离的，在多线程环境下，防止自己的变量被其他线程篡改
+**作用：**主要是做**数据隔离**，**填充的数据只属于当前线程**，变量的数据对别的线程而言是相对隔离的，在多线程环境下，防止自己的变量被其他线程篡改
 
 **应用场景**
 
@@ -2275,7 +2275,7 @@ Spring 采用 Threadlocal 的方式，来保证单个线程中的数据库操作
 
 #### 底层原理
 
-每个线程 Thread 都维护了自己的 threadLocals 变量，所以在每个线程创建 ThreadLocal 的时候，实际上数据是存在自己线程 Thread 的 threadLocals 变量里面的，其他线程没法拿到，从而实现了隔离
+**每个线程 Thread 都维护了自己的 threadLocals 变量**，所以在每个线程创建 ThreadLocal 的时候，实际上数据是存在自己线程 Thread 的 threadLocals 变量里面的，其他线程没法拿到，从而实现了隔离
 
 ##### ThreadLocalMap 底层结构
 
@@ -2309,7 +2309,7 @@ if (k == key) {
 
 如果位置 i 不为空，而且 key 不等于 entry，那就找下一个空位置，直到为空为止
 
-<img src="https://raw.githubusercontent.com/whn961227/images/master/data/20200727103238.png" style="zoom:33%;" />
+<img src="https://raw.githubusercontent.com/whn961227/images/master/data/20200727103238.png" style="zoom: 50%;" />
 
 这样的话，在 get 的时候，也会根据 ThreadLocal 对象的 hash 值，定位到 table 中的位置，然后判断该位置 Entry 对象中的 key 是否和 get 的 key 一致，如果不一致，就判断下一位置，set 和 get 如果冲突严重的话，效率很低
 
@@ -2390,7 +2390,7 @@ ThreadLocal 在保存的时候会把自己当作 key 存在 ThreadLocalMap 中�
 
 #### 如何解决
 
-在代码的最后使用 remove
+在代码的最后使用 **remove**
 
 ```java
 ThreadLocal<String> localName = new ThreadLocal<>();

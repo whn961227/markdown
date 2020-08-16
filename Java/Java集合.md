@@ -73,51 +73,51 @@ Map：存储key-value键值对，key无序不可重复，value无序可重复
 
 ---
 
-#### HashMap和Hashtable的区别
+#### HashMap 和Hashtable 的区别
 
 1. **是否线程安全**
 
-   HashMap不是线程安全的，Hashtable是线程安全的，内部方法基本都经过Synchronized修饰
+   HashMap 不是线程安全的，Hashtable 是线程安全的，内部方法基本都经过 Synchronized 修饰
 
 2. **效率**
 
-   因为线程安全问题，HashMap要比Hashtable效率高。Hashtable基本被淘汰
+   因为线程安全问题，HashMap 要比 Hashtable 效率高。Hashtable 基本被淘汰
 
-3. **对Null Key和Null Value的支持**
+3. **对 Null Key 和 Null Value 的支持**
 
-   HashMap可以存储null的key和value，但null作为key只有一个，null作为值可以有多个；Hashtable不允许有null的key和value，否则会抛出NullPointerException
+   HashMap 可以存储 null 的 key 和 value，但 null 作为 key 只有一个，null 作为值可以有多个；Hashtable 不允许有 null 的 key 和 value，否则会抛出 NullPointerException
 
 4. **初始容量大小和每次扩充容量大小的不同**
 
-   创建时如果不指定初始容量，Hashtable默认的初始大小为11，每次按2n+1倍扩容；HashMap默认的初始大小为16，每次按2倍扩容
+   创建时如果不指定初始容量，Hashtable 默认的初始大小为11，每次按 2n+1 倍扩容；HashMap 默认的初始大小为 16，每次按 2 倍扩容
 
-   创建时如果指定初始容量，Hashtable会直接创建给定的容量；HashMap会将其扩充为2的幂次方大小，HashMap总是使用2的幂作为HashMap的大小
+   创建时如果指定初始容量，Hashtable 会直接创建给定的容量；HashMap 会将其扩充为 2 的幂次方大小，HashMap 总是使用 2 的幂作为 HashMap 的大小
 
 5. **底层数据结构**
 
    HashMap：数组+链表+红黑树
 
-#### HashMap和HashSet区别
+#### HashMap 和 HashSet 区别
 
-HashSet底层是基于HashMap实现的
+HashSet 底层是基于 HashMap 实现的
 
-#### HashMap和TreeMap区别
+#### HashMap 和 TreeMap 区别
 
-相比于HashMap来说TreeMap主要多了对集合中的元素根据键排序的能力以及对集合内元素的搜索的能力
+相比于 HashMap 来说 TreeMap 主要多了对集合中的元素根据键排序的能力以及对集合内元素的搜索的能力
 
-#### HashMap的底层实现
+#### HashMap 的底层实现
 
  数组+链表+红黑树
 
-#### HashMap的长度为什么是2的幂次方
+#### HashMap 的长度为什么是 2 的幂次方
 
-数组下标的计算方法是（n-1）&hash（也就是说hash%length == hash&（length-1）的前提是length是2的幂次方），采用二进制位操作&，相当于%，能够提高运算效率
+数组下标的计算方法是（n-1）& hash（也就是说 hash % length == hash &（length-1）的前提是 length 是 2 的幂次方），采用二进制位操作 &，相当于 %，能够提高运算效率
 
-#### HashMap多线程操作导致死循环问题
+#### HashMap 多线程操作导致死循环问题
 
-jdk1.7采用头插法，在rehash时会形成循环链表
+jdk1.7 采用头插法，在 rehash 时会形成循环链表
 
-jdk1.8多线程会出现数据覆盖
+jdk1.8 多线程会出现数据覆盖
 
 
 
