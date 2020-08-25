@@ -107,6 +107,57 @@ ON  A.学号=B.学号
 
 ![img](https://pic4.zhimg.com/80/v2-4e7bedab0b48f3d0ce3ee2b500903834_720w.jpg)
 
+#### Right Join 右连接
+
+用于获取右表中的所有记录，即使左表没有对应匹配的记录。
+
+![img](https://pic1.zhimg.com/80/v2-742cc2400cf90e34e4b19d0587047dec_720w.jpg)
+
+```sql
+--右连接：显示右表major所有记录，如左表中没有与之
+--匹配的项则以NULL值代替。
+
+SELECT A.学号, A.姓名, A.籍贯, A.年龄, B.专业, B.班级
+FROM student A RIGHT JOIN major B  
+ON  A.学号=B.学号
+```
+
+![img](https://pic1.zhimg.com/80/v2-5ed2e1d82e92575ba60778511949701d_720w.jpg)
+
+#### Full Join 完全连接
+
+返回两个表中的所有行。
+
+![img](https://pic4.zhimg.com/80/v2-4da74dd801c81a61eb10e3699d87e4c6_720w.jpg)
+
+```sql
+--完全连接：显示两张表的并集，如果其中一张表的记录
+--在另一张表中没有匹配的行，则对应的数据项填充NULL
+
+SELECT A.学号, A.姓名, A.籍贯, A.年龄, B.专业, B.班级
+FROM student A FULL JOIN major B  
+ON  A.学号=B.学号
+```
+
+![img](https://pic3.zhimg.com/80/v2-b0ae779aafbbff6f190db1e49df46be2_720w.jpg)
+
+#### Cross Join 交叉连接
+
+结果是笛卡尔积，就是第一个表的行数乘以第二个表的行数。
+
+![img](https://pic1.zhimg.com/80/v2-37cd1d45bb26a92bd54cedf7e8976692_720w.jpg)
+
+```sql
+--交叉连接：一张表中的数据依次取出分别与另一张表中的
+--每条数据挨个组合，最后记录数量为两张表记录数的乘积
+
+SELECT * FROM student CROSS JOIN major
+
+--本例student和major都为7条记录，所以结果为7*7=49条记录
+```
+
+![img](https://pic1.zhimg.com/v2-dd567fe9dcef9e2a77cb14cd6054c329_b.webp)
+
 
 
 
@@ -194,3 +245,11 @@ MySql 使用**基于成本的查询优化器**。它会尝试预测一个查询�
 如果查询可以被缓存，那么 MySql 在这个阶段会**将结果存放到查询缓存**中
 
 MySql 将结果集返回给客户端是一个增量、逐步返回的过程。在查询生成第一条结果时，MySql 就可以开始向客户端逐步返回结果集了
+
+### 索引
+
+#### 分类
+
+1. 按**存储结构**划分：BTree索引（B-Tree或B+Tree索引），Hash索引，full-index全文索引，R-Tree索引。
+2. 按**应用层次**划分：普通索引，唯一索引，复合索引。
+3. 根据
