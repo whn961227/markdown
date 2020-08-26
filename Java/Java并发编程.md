@@ -29,7 +29,7 @@
 
 ### 创建和运行线程
 
-* **直接使用 Thread**
+* **直接使用 Thread 实现 run 方法**
 
   ```java
   // 创建线程对象
@@ -42,7 +42,7 @@
   t.start();
   ```
 
-* **使用 Runnable 配合 Thread**
+* **使用 Runnable 接口配合 Thread**
 
   ```java
   Runnable runnable = new Runnable() {
@@ -56,7 +56,7 @@
   t.start();
   ```
 
-* **FutureTask 配合 Thread**
+* **FutureTask 实现 callable 接口配合 Thread**
 
   ```java
   // 创建任务对象
@@ -822,7 +822,7 @@ t2.start();
 
 #### 定位死锁
 
-* 检测死锁可以使用 jconsole 工具，或者使用 jps 定位进程 id，再用 jstack 定位死锁
+* 检测死锁可以使用 jconsole 工具，或者**使用 jps 定位进程 id**，再用 **jstack + 进程 id 定位死锁**
 
 #### 活锁
 
@@ -1564,6 +1564,12 @@ public final class Singleton{
 
 ### CAS 与 volatile
 
+#### 什么是 CAS
+
+* CAS 全称：Compare-And-Set , **它是一条CPU并发源语**
+* 它的功能就是*判断内存某个位置的值是否为预期值，如果是则更新为新的值*，这个过程是**原子**的。
+* CAS 并发源语体现在 Java 语言中就是*sun.miscUnSafe*类中的各个方法，调用 UnSafe 类中的 CAS 方法，JVM 会帮我实现 CAS 汇编指令，这是一种完全依赖于`硬件`功能，通过它实现了原子操作，再次强调，由于CAS是一种系统源语，源语属于操作系统用于范畴，是由若干个指令组成，用于完成某个功能的一个过程，并且源语的执行必须是连续的，在**执行过程中不允许中断，也即是说 CAS是一条原子指令，不会造成所谓的数据不一致的问题**
+
 #### CAS 工作方式
 
 ```java
@@ -1579,7 +1585,7 @@ public void withdraw(Integer amount) {
 }
 ```
 
-CAS 必须借助 volatile 才能读取到共享变量的最新值来实现 **比较并交换** 的结果
+**CAS 必须借助 volatile 才能读取到共享变量的最新值**来实现 **比较并交换** 的结果
 
 #### CAS 的特点
 
@@ -1591,11 +1597,15 @@ CAS 必须借助 volatile 才能读取到共享变量的最新值来实现 **比
   * 因为没有使用 synchronized，所以线程不会阻塞，效率提升
   * 但如果竞争激烈，重试必然频繁发生，效率会受到影响
 
+#### CAS 存在的问题
+
+1. **循环时间长，开销大**：由于CAS存在自旋操作，即do while循环，如果CAS失败，会一直进行尝试。如果CAS长时间不成功，会给CPU带来很大的开销。
+2. **只能保证一个共享变量的原子性**
+3. **引来的 ABA 问题**
+
 #### ABA问题
 
-主线程仅能判断出共享变量的值与最初值是否相同，不能感知到这种从 A 改为 B 再改回 A 的情况，如果主线程希望：
-
-只要有其他线程 **改动了** 共享变量，那么自己的 cas 就算失败，这时，仅比较值是不够的，需要再加一个**版本号**
+主线程仅能判断出共享变量的值与最初值是否相同，不能感知到这种从 A 改为 B 再改回 A 的情况，如果主线程希望只要有其他线程 **改动了** 共享变量，那么自己的 cas 就算失败，这时，仅比较值是不够的，需要再加一个**版本号**
 
 
 
@@ -1631,6 +1641,89 @@ final 变量的赋值也会通过 putfield 指令来完成，同样在这条指�
 ### 获取 final 变量的原理
 
 
+
+### 阻塞队列
+
+> **概念**
+
+阻塞队列，拆分为“阻塞”和“队列”，所谓阻塞，在多线程领域，某些情况下会挂起线程（即线程阻塞），一旦条件满足，被挂起的线程优先被自动唤醒。
+
+![img](https://mmbiz.qpic.cn/mmbiz_png/P7WuIzkp9iaXvoF0hAoaGlbxkOktPeib6uZHTkIjHXnsRluDAXib7fibs5uMicDzdXu7s5pQ21dfjZZX9xeWABicoZwA/640?wx_fmt=png&tp=webp&wxfrom=5&wx_lazy=1&wx_co=1)
+
+**Tread 1 往阻塞队列中添加元素，Thread 2 往阻塞队列中移除元素**
+
+1. 当阻塞队列是空时，从队列中**获取**元素的操作将会被阻塞。
+2. 当阻塞队列是满时，从队列中**添加**元素的操作将会被阻塞。
+
+> **种类**
+
+1. **ArrayBlockingQueue：** 是一个基于**数组结构** 的有界阻塞队列，此队列按照FIFO（先进先出）规则排序。
+2. **LinkedBlockingQueue：** 是一个基于**链表结构**的有界阻塞队列（大小默认值为Integer.MAX_VALUE），此队列按照FIFO（先进先出）对元素进行排序，吞吐量通常要高于ArrayBlockingQueue。
+3. **SynchronusQueue：** 是一个**不储存元素**的阻塞队列，**每个插入操作必须等到另一个线程调用移除操作**，**否则插入操作一直处于阻塞状态**，吞吐量通常要高于LinkedBlockingQueue。
+4. PriorityBlockingQueue：支持优先级排序的无界阻塞队列
+5. DelayQueue：使用优先级队列实现的延迟无界阻塞队列。
+6. LinkedTransferQueue：由链表结构组成的无界阻塞队列。
+
+*吞吐量*: `SynchronusQueue` > `LinkedBlockingQueue` > `ArrayBlockingQueue`
+
+
+
+### 线程池
+
+> **概念**
+
+线程池做的工作主要是控制运行的线程的数量，**处理过程中将任务加入队列**，然后在线程创建后启动这些任务，**如果线程超过了最大数量，超出的线程将排队等候**，等其他线程执行完毕，再从队列中取出任务来执行。
+
+> **特点**
+
+* 线程复用
+* 控制最大并发数
+* 管理线程
+
+> **优点**
+
+* 降低资源消耗，通过**重复利用自己创建的线程减低线程创建和销毁造成的消耗**。
+* 提高响应速度，当任务到达时，**任务可以不需要等到线程创建就能立即执行**。
+* **提高线程的可管理性**，线程是稀缺资源，如果无限制的创建，不仅会消耗系统资源，还会降低系统的稳定性，使用线程可以进行统一分配，调优和监控。
+
+![img](https://mmbiz.qpic.cn/mmbiz_jpg/P7WuIzkp9iaXvoF0hAoaGlbxkOktPeib6uEwhCtgddWgL4Dc4aNjvPCiaYZv7w1E6U0VfJFLgzDok5qT6dia1KwvJw/640?wx_fmt=jpeg&tp=webp&wxfrom=5&wx_lazy=1&wx_co=1)
+
+![img](https://mmbiz.qpic.cn/mmbiz_jpg/P7WuIzkp9iaXvoF0hAoaGlbxkOktPeib6uHBgQWMSCqvHRz9ibJQfmSlZibdhlquzaAovn85mxcdqywURqUmbQ1KYg/640?wx_fmt=jpeg&tp=webp&wxfrom=5&wx_lazy=1&wx_co=1)
+
+> **拒绝策略**
+
+等待队列已经排满，再也塞不下新的任务，而且也达到了 **maximumPoolSize** 数量，无法继续为新任务服务，这个时候我们便要采取拒绝策略机制合理的处理这个问题。
+
+*以下内置拒绝策略均实现了 RejectExecutionHandler 接口*
+
+* `AbortPolicy（默认）`：直接抛出 RejectedException 异常来阻止系统正常运行。
+* `CallerRunPolicy`：“调用者运行” 一种调节机制，该策略既不会抛弃任务，也不会抛出异常。线程调用运行该任务的 execute 本身。此策略提供简单的反馈控制机制，能够减缓新任务的提交速度。
+* `DiscardOldestPolicy`：**抛弃队列中等待最久的任务**，**然后把当前任务加入队列中尝试再次提交**（如果再次失败，则重复此过程）。
+* `DiscardPolicy`：直接丢弃任务，不予任何处理也不抛出异常，如果允许任务丢失，这是最好的拒绝策略。
+
+> **“** 
+>
+> 阿里巴巴 java 开发手册
+> `【强制】`线程资源必须通过线程池提供，不允许在应用中自行显示创建线程。说明：使用线程池的好处是**减少在创建和销毁线程上所消耗的时间以及系统资源的开销，解决资源不足的问题。如果不使用线程池，有可能造成系统创建大量同类线程而导致消耗完内存或者“过度切换”的问题。**
+> `【强制】` 线程池不允许使用 Executors 去创建，而是通过 ThreadPoolExecutor 的方式，这样的处理方式让写的同学更加明确线程池的运行规则，规避资源耗尽的风险。
+>
+> 1. `FixedThreadPool` 和 `SingleThreadPool`：允许的请求队列长度为Integer.MAX_VALUE，可能会堆积大量的请求，从而导致OOM。
+> 2. `CacheThreadPool` 和 `ScheduledThreadPool` ：允许创建线程的数量为Integer.MAX_VALUE，可能会创建大量的线程，从而导致OOM。
+
+> **合理配置线程池**
+
+*CPU 密集型*：
+
+* 查看本机 CPU 核数：`Runtime.getRuntime().availableProcessors()`
+* CPU 密集的意思是**该任务需要大量的运算**，而没有阻塞，CPU 需一直全速运行。
+* CPU 密集任务只有在真正的多核 CPU 上才可能得到加速（通过多线程）
+* CPU 密集型任务配置尽可能少的线程数量 => 公式：CPU 核数 + 1 个线程的线程池
+
+*IO 密集型*：
+
+* 由于 IO 密集型任务线程并不是一直在执行任务，则应配置尽可能多的线程，如 CPU 核数 * 2
+* IO 密集型，是说明该任务需要大量的 IO，即大量的阻塞。所以在单线程上运行 IO 密集型的任务会导致浪费大量的 CPU 运算能力**浪费在等待**上，所以要使用多线程可以大大的加速程序运行，即使在单核 CPU 上，这种加速主要就是利用了被浪费掉的阻塞时间。
+* 配置线程公式：CPU 核数 / 1 - 阻塞系数（0.8~0.9） =>如 8 核 CPU：8 / 1 - 0.9 = 80 个线程数
 
 
 
@@ -1945,7 +2038,7 @@ public static ExecutorService newSingleThreadExecutor() {
 
 使用场景：
 
-希望多个任务排队执行。**线程数固定为 1**，任务数多于 1 时，会放入无界队列排队。任务执行完毕，这唯一的线程也不会被释放
+希望**多个任务排队执行**。**线程数固定为 1**，任务数多于 1 时，会放入无界队列排队。任务执行完毕，这唯一的线程也不会被释放
 
 区别：
 
@@ -2255,13 +2348,13 @@ Thread-1 释放锁，进入 unlock 流程
 
 用来进行线程同步协作，等待所有线程完成倒计时
 
-其中构造参数用来初始化等待计数值，await() 用来等待计数归零，countDown() 用来让计数减一
+其中构造参数用来初始化等待计数值，**await() 用来等待计数归零**，**countDown() 用来让计数减一**
 
 
 
 ### CyclicBarrier
 
-循环栅栏，用来进行线程协作，等待线程满足某个计数。构造时设置 **计数个数**，每个线程执行到某个需要 **同步** 的时刻调用 await() 方法进行等待，当等待的线程数满足 **计数个数** 时，继续执行
+循环栅栏，用来进行线程协作，等待线程满足某个计数。**构造时设置计数个数**，每个线程执行到某个需要 **同步** 的时刻调用 await() 方法进行等待，当等待的线程数满足 **计数个数** 时，继续执行
 
 
 
@@ -2430,3 +2523,17 @@ key 不设置成弱引用的话就会造成和 entry 中 value 一样内存泄�
 按照源码，Entry 继承弱引用，其 key 对 ThreadLocal 是弱引用，也就是图中 5 是弱引用，6 是强引用
 
 当栈中的 ThreadLcoal 引用被清除了；由于堆内存中 ThreadLocalMap 的 Entry Key 弱引用 ThreadLocal 对象，此时 ThreadLocal 对象会被 gc 回收，Entry 的 key 为 null，但是 value 不为 null，且 value 也是强引用，所以 Entry 仍旧不能回收，只能释放 ThreadLocal 的内存，仍旧可能导致内存泄露
+
+
+
+
+
+
+
+
+
+
+
+### 参考资料：
+
+[一文看懂 JUC 多线程及高并发](https://mp.weixin.qq.com/s?subscene=23&__biz=MzA4ODA5MzUwOQ==&mid=2247483770&idx=1&sn=5d152cdc2d331a3391e774b8b5ca320a&chksm=902e2750a759ae46f4f23de4063de016cd7b2f30ebe98f008407118925997fe77204ba561a84&scene=7&key=892b62220735b7b9fd95bd0967f53e9d9ba67580ab7820cdb7c0a4fba37f6faf8460c26ea4947bdd3388063a0966d703d9732796148968ff2755a4321204650b158611193a699f8770099debbac958a57c54694845cc61d9d2786b574daa8e28862e8ebac26819e3591b66b983bab2671c05518e08d639b149a32147dc226bd4&ascene=0&uin=MjY5NTE2NDAzOQ%3D%3D&devicetype=Windows+10+x64&version=62090529&lang=zh_CN&exportkey=AyS5SKjKUrV55Msqh8ULsc0%3D&pass_ticket=P2XA7EiH2MxlQMVN4K%2FLMfh69gXeYLVgPnjN2%2FVN0r25EoQHpJqggaHDjf5OFilR)

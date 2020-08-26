@@ -381,7 +381,7 @@ Kafka 0.9 版本之前，consumer 默认将 offset 保存在 Zookeeper 中，从
 
 ##### 消费者重平衡
 
-我们从上面的`消费者演变图`中可以知道这么一个过程：最初是一个消费者订阅一个主题并消费其全部分区的消息，后来有一个消费者加入群组，随后又有更多的消费者加入群组，而新加入的消费者实例`分摊`了最初消费者的部分消息，这种把分区的所有权通过一个消费者转到其他消费者的行为称为`重平衡`，英文名也叫做 `Rebalance` 。
+我们从上面的`消费者演变图`中可以知道这么一个过程：最初是一个消费者订阅一个主题并消费其全部分区的消息，后来有一个消费者加入群组，随后又有更多的消费者加入群组，而新加入的消费者实例`分摊`了最初消费者的部分消息，这种把分区的所有权通过一个消费者转到其他消费者的行为称为`重平衡`，英文名也叫做 `Rebalance` 
 
 <img src="https://mmbiz.qpic.cn/mmbiz_png/laEmibHFxFw7haRlQPaFcxDRgI51Mdf275CDVlX6jFQr4kCtLjFaeFsR5PIwM8Qwdvh0fcFdCr1HVIb16yOFzBA/640?wx_fmt=png&amp;tp=webp&amp;wxfrom=5&amp;wx_lazy=1&amp;wx_co=1" alt="img" style="zoom:50%;" />
 

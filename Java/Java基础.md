@@ -631,7 +631,57 @@ public class Sub extends Super{
 
 
 
+### Java BIO
+
+**BIO**：传统的网络通讯模型，就是 BIO，同步阻塞 IO
+
+它其实就是**服务端创建一个 ServerSocket**， 然后就是**客户端用一个 Socket 去连接服务端的那个 ServerSocket**， **ServerSocket 接收到了一个的连接请求就创建一个 Socket 和一个线程去跟那个 Socket 进行通讯**。
+
+接着**客户端和服务端就进行阻塞式的通信**，**客户端发送一个请求**，**服务端Socket进行处理后返回响应**。
+
+**在响应返回前**，**客户端**那边就**阻塞等待**，上门事情也做不了。
+
+这种方式的缺点：**每次一个客户端接入，都需要在服务端创建一个线程来服务这个客户端**
+
+这样**大量客户端**来的时候，就会造成**服务端的线程数量可能达到了几千甚至几万**，这样就可能会**造成服务端过载过高**，最后**崩溃**死掉。
+
+BIO 模型图：
+
+<img src="https://mmbiz.qpic.cn/mmbiz_png/1J6IbIcPCLaRj51teUPPUDVohsACoBMVNP0MCbH5iaZ1kSG4njLGG3hXkY63N1ibT7SUSBmlkFo1T4M35hlbrLSw/640?wx_fmt=png&amp;tp=webp&amp;wxfrom=5&amp;wx_lazy=1&amp;wx_co=1" alt="img" style="zoom: 67%;" />
+
+**Acceptor：**
+
+传统的 IO 模型的网络服务的设计模式中有俩种比较经典的设计模式：一个是**多线程**， 一种是**依靠线程池来进行处理**
+
+如果是基于多线程的模式来的话，就是这样的模式，这种也是 Acceptor 线程模型。
+
+<img src="https://mmbiz.qpic.cn/mmbiz_png/1J6IbIcPCLaRj51teUPPUDVohsACoBMVGgPqeeqfPUc3WMHdwP2icdqeyP1fLMNAQMH08rUg2KTLF2bsWI4xKlg/640?wx_fmt=png&amp;tp=webp&amp;wxfrom=5&amp;wx_lazy=1&amp;wx_co=1" alt="img" style="zoom:80%;" />
+
 ### Java NIO
+
+NIO 是一种同步非阻塞 IO, 基于 Reactor 模型来实现的。
+
+其实相当于就是**一个线程处理大量的客户端的请求**，通过一个线程轮询大量的 channel，每次就获取一批有事件的channel，然后对每个请求启动一个线程处理即可。
+
+这里的核心就是非阻塞，就那个 **selector 一个线程就可以不停轮询 channel**，**所有客户端请求都不会阻塞**，直接就会进来，大不了就是等待一下排着队而已。
+
+这里面**优化 BIO 的核心**就是，一个客户端并不是时时刻刻都有数据进行交互，没有必要死耗着一个线程不放，所以客户端选择了让线程歇一歇，**只有客户端有相应的操作的时候才发起通知**，**创建一个线程来处理请求**。
+
+> **为什么说 NIO 为啥是同步非阻塞？**
+
+因为无论多少客户端都可以接入服务端，客户端接入并不会耗费一个线程，只会**创建一个连接然后注册到 selector** 上去，这样你就可以去干其他你想干的其他事情了
+
+**一个 selector 线程不断的轮询所有的 socket 连接**，发现有事件了就通知你，然后你就**启动一个线程处理一个请求**即可，这个过程的话就是**非阻塞**的。
+
+但是这个处理的过程中，你还是要先**读取数据，处理，再返回**的，这是个**同步**的过程。
+
+**NIO：模型图**
+
+![img](https://mmbiz.qpic.cn/mmbiz_png/1J6IbIcPCLaRj51teUPPUDVohsACoBMV5gDRaeJenSQ50g97N68RGzytWM1Ul9QibFT8381UG9evPiaInqIKe5VQ/640?wx_fmt=png&tp=webp&wxfrom=5&wx_lazy=1&wx_co=1)
+
+**Reactor 模型:**
+
+![img](https://mmbiz.qpic.cn/mmbiz_png/1J6IbIcPCLaRj51teUPPUDVohsACoBMVHaea33Nt2wjs36XKvG6P7Lk7GvVdE7lp1kgYAWNRAFp4aia8gaMwzwg/640?wx_fmt=png&tp=webp&wxfrom=5&wx_lazy=1&wx_co=1)
 
 #### NIO 和 IO 的区别
 
@@ -1159,6 +1209,42 @@ public class TestPipe {
     }
 }
 ```
+
+
+
+### Java AIO
+
+AIO：异步非阻塞 IO，基于 Proactor 模型实现。
+
+每个连接发送过来的请求，都会**绑定一个 Buffer**，然后**通知操作系统去完成异步的读**，这个时间你就可以去做其他的事情
+
+等到**操作系统完成读之后**，就会**调用你的接口**，**给你操作系统异步读完的数据**。这个时候你就可以拿到数据进行处理，将数据往回写
+
+在往回写的过程，同样是**给操作系统一个Buffer**，**让操作系统去完成写**，**写完了来通知你**。
+
+这俩个过程都有 buffer 存在，**数据都是通过 buffer 来完成读写**。
+
+这里面的主要的区别**在于将数据写入的缓冲区后，就不去管它，剩下的去交给操作系统去完成**。
+
+**操作系统写回数据也是一样，写到 Buffer 里面，写完后通知客户端来进行读取数据**。
+
+> **为什么说 AIO 是异步非阻塞？**
+
+通过 AIO 起个文件 IO 操作之后，你立马就返回可以干别的事儿了，接下来你也不用管了，操作系统自己干完了 IO 之后，告诉你说 ok 了
+
+当你基于 AIO 的 api 去读写文件时， 当你发起一个请求之后，剩下的事情就是交给了操作系统
+
+当读写完成后， 操作系统会来回调你的接口， 告诉你操作完成
+
+在这期间不需要等待， 也不需要去轮询判断操作系统完成的状态，你可以去干其他的事情。
+
+同步就是自己还得主动去轮询操作系统，异步就是操作系统反过来通知你。所以来说， AIO 就是异步非阻塞的。
+
+**AIO：模型图**
+
+![img](https://mmbiz.qpic.cn/mmbiz_png/1J6IbIcPCLaRj51teUPPUDVohsACoBMVAW3dXN5DbvKianRuLTiccBZBoBTyYS5nqMOVbV1eGQ0Q3tQoQuUFZoOQ/640?wx_fmt=png&tp=webp&wxfrom=5&wx_lazy=1&wx_co=1)
+
+
 
 
 
