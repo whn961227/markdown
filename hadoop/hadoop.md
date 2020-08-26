@@ -266,19 +266,68 @@ dfs.block.size : 134217728
 
 
 
+### Hadoop 数据压缩
+
+#### 概述
+
+压缩技术能够有效减少 HDFS 读写字节数。压缩提高了网络带宽和磁盘空间的效率。在运行 MR 程序时，I/O 操作，网络数据传输，Shuffle 和 Merge 要花大量的时间，尤其是**数据规模很大和工作负载密集**的情况下，因此，**使用数据压缩显得非常重要**
+
+鉴于磁盘 I/O 和网络带宽是 Hadoop 的宝贵资源，**数据压缩对于节省资源，最小化磁盘 I/O 和网络传输非常有帮助**，**可以在任意 MR 阶段启用压缩**
+
+压缩是提高 Hadoop 运行效率的一种**优化策略**
+
+**通过对 Mapper、Reducer 运行过程的数据进行压缩，以减少磁盘 IO**，提高 MR 程序运行速度
+
+*注意：采用压缩技术减少了磁盘 IO，但同时增加了 CPU 运算负担。所以，压缩特性运用得当能提高性能，但运用不当也可能降低性能*
+
+**压缩基本原则：**
+
+1. **运算密集型的 job，少用压缩**
+2. **IO 密集型的 job，多用压缩**
+
+#### 压缩方式的选择
+
+> **Gzip 压缩**
+
+优点：压缩率比较高，速度较快；Hadoop 本身支持
+
+缺点：不支持 split
+
+应用场景：**当每个文件压缩后在 1 个块大小内，都可以考虑用 Gzip 压缩格式**
+
+> **Bzip2 压缩**
+
+优点：支持 split；具有很高的压缩率；Hadoop 本身自带
+
+缺点：速度慢
+
+应用场景：**适合对速度要求不高，但需要较高的压缩率的时候**；或者**输出之后的数据较大，处理之后的数据需要压缩存档减少磁盘空间并且以后数据用的比较少的情况**；
+
+> **Lzo 压缩**
+
+优点：速度比较快，合理的压缩率；支持 split，是 Hadoop 中最流行的压缩格式
+
+缺点：压缩率比 Gzip 要低一些；Hadoop 本身不支持，需要安装；为了支持 split 需要建索引，还需要指定 inputformat 为 Lzo 格式
+
+> **Snappy 压缩**
+
+优点：高速压缩速度和合理的压缩率
+
+缺点：不支持 Split；压缩率比 Gzip 要低；Hadoop 本身不支持，需要安装
+
 ### HDFS HA
 
-HDFS HA 功能通过配置 Active/Standby 两个 NameNodes 实现在集群中对 NameNode 的热备来解决单点故障问题，其中只有 Active NameNode 对外提供读写服务，Standby NameNode 会根据 Active NameNode 的状态变化，在必要时切换成 Active 状态
+HDFS HA 功能通过配置 **Active/Standby 两个 NameNodes** 实现在集群中对 NameNode 的热备来解决单点故障问题，其中**只有 Active NameNode 对外提供读写服务**，Standby NameNode 会根据 Active NameNode 的状态变化，在必要时切换成 Active 状态
 
 <img src="https://raw.githubusercontent.com/whn961227/images/master/data/20200728115232.png" style="zoom: 33%;" />
 
-**ZKFC：**ZKFC 即 ZKFailoverController，作为独立进程存在，负责控制 NameNode 的主备切换，ZKFC 会监测 NameNode 的健康状况，当发现 Active NameNode 出现异常时会通过 Zookeeper 集群进行一次主备选举，完成 Active 和 Standby 状态的切换
+**ZKFC：**ZKFC 即 ZKFailoverController，作为独立进程存在，负责**控制 NameNode 的主备切换**，ZKFC 会监测 NameNode 的健康状况，当发现 Active NameNode 出现异常时会**通过 Zookeeper 集群进行一次主备选举**，完成 Active 和 Standby 状态的切换
 
-**JournalNode 集群：**共享存储系统，负责存储 HDFS 的元数据，Active NameNode（写入）和 Standby NameNode（读取）通过共享存储系统实现元数据同步，在主备切换过程中，新的 Active NameNode 必须确保元数据同步完成才能对外提供服务
+**JournalNode 集群：** **共享存储系统**，负责**存储 HDFS 的元数据**，**Active NameNode（写入）和 Standby NameNode（读取）通过共享存储系统实现元数据同步**，在主备切换过程中，新的 Active NameNode 必须确保元数据同步完成才能对外提供服务
 
-**Zookeeper 集群：**为 ZKFC 提供主备选举支持
+**Zookeeper 集群：**为 ZKFC 提供**主备选举**支持
 
-**DataNode 节点：**除了通过 JournalNode 共享 HDFS 的元数据信息之外，主 NameNode 和备 NameNode 还需要共享 HDFS 的数据块和 DataNode 之间的映射关系。DataNode 会同时向主 NameNode 和备 NameNode 上报数据块的位置信息
+**DataNode 节点：**除了通过 JournalNode 共享 HDFS 的元数据信息之外，主 NameNode 和备 NameNode 还需要共享 HDFS 的数据块和 DataNode 之间的映射关系。**DataNode 会同时向主 NameNode 和备 NameNode 上报数据块的位置信息**
 
 ####  主备切换实现
 
@@ -370,7 +419,7 @@ MapReduce 是一个分布式运算程序的编程框架，核心功能是将用�
 
 ##### 切片与 MapTask 并行度决定机制
 
-**数据切片：**数据切片只是在逻辑上对输入进行分片，并不会在磁盘上将其切分成片进行存储
+**数据切片：**数据切片只是在**逻辑上对输入进行分片**，并不会在磁盘上将其切分成片进行存储
 
 1. 一个 Job 的 Map 阶段并行度由客户端在提交 Job 时的切片数决定
 2. 每一个 Split 切片分配一个 MapTask 并行实例处理
@@ -456,7 +505,7 @@ public class HashPartitioner<K, V> extends Partitioner<K, V> {
 **分区总结：**
 
 1. 如果 ReduceTask 的数量 > getPartition 的结果数，则会多产生几个空的输入文件 part-r-000xx
-2. 如果 1 < ReduceTask的数量 < getPartition 的结果数，则有一部分分区数据无处安放，会 Exception
+2. 如果 1 < ReduceTask 的数量 < getPartition 的结果数，则有一部分分区数据无处安放，会 Exception
 3. 如果 ReduceTask 的数量 = 1，则不管 MapTask 端输出多少个分区文件，最终结果都交给一个 ReduceTask，最终也就只会产生一个结果文件 part-r-00000
 4. 分区号必须从 0 开始，逐一累加
 
@@ -501,7 +550,7 @@ public class HashPartitioner<K, V> extends Partitioner<K, V> {
 
 **适用场景：**适用于一张表十分小，一张表很大的场景
 
-在 Map 端缓存多张表，提前处理业务逻辑，这样增加 Map 端业务，减少 Reduce 端数据的压力，尽可能减少数据倾斜
+在 **Map 端缓存多张表**，提前处理业务逻辑，这样增加 Map 端业务，减少 Reduce 端数据的压力，尽可能减少数据倾斜
 
 **具体方法：DistributedCache**
 
