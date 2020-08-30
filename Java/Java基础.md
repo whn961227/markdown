@@ -500,7 +500,7 @@ public final native void notify();
 public final native void notifyAll();
 // 暂停线程的执行
 public final native void wait(long timeout) throws InterruptedException;
-//  nanos 表示额外时间
+// nanos 表示额外时间
 public final void wait(long timeout, int nanos) throws InterruptedException;
 // 一直等待，没有超时时间的概念
 public final void wait() throws InterruptedException;

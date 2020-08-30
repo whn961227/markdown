@@ -1,5 +1,105 @@
 ## MySQL
 
+### 管理员必备技能
+
+#### MySQL 权限工作原理
+
+**mysql是如何来识别一个用户的呢？**
+
+mysql为了安全性考虑，采用`主机名+用户名`来判断一个用户的身份
+
+**Mysql权限验证分为2个阶段：**
+
+1. 阶段1：连接数据库，此时mysql会根据你的用户名及你的来源（ip或者主机名称）**判断是否有权限连接**
+2. 阶段2：对mysql服务器发起请求操作，如create table、select、delete、update、create index等操作，此时mysql会判断你**是否有权限操作这些指令**
+
+#### 权限生效时间
+
+**用户及权限信息放在库名为mysql的库中**，mysql启动时，这些内容被读进内存并且从此时生效，所以如果通过直接操作这些表来修改用户及权限信息的，需要`重启mysql`或者执行`flush privileges;`才可以生效。
+
+**用户登录之后，mysql会和当前用户之间创建一个连接，此时用户相关的权限信息都保存在这个连接中**，存放在内存中，此时如果有其他地方修改了当前用户的权限，这些变更的权限会在下一次登录时才会生效。
+
+#### 查看 MySQL 中所有用户
+
+用户信息在`mysql.user`表中，如下：
+
+```
+mysql> use mysql;
+Database changed
+mysql> select user,host from user;
++---------------+--------------+
+| user          | host         |
++---------------+--------------+
+| test4         | 127.0.0.%    |
+| test4         | 192.168.11.% |
+| mysql.session | localhost    |
+| mysql.sys     | localhost    |
+| root          | localhost    |
+| test2         | localhost    |
++---------------+--------------+
+6 rows in set (0.00 sec)
+```
+
+####  创建用户
+
+**语法：**
+
+```sql
+create user 用户名[@主机名] [identified by '密码']
+```
+
+> 说明：
+>
+> 1. 主机名默认值为 % ，表示这个用户可以从任何主机连接mysql服务器
+> 2. 密码可以省略，表示无密码登录
+
+#### 修改密码【3 种方式】
+
+#### 给用户授权
+
+创建用户之后，需要给用户授权，才有意义。
+
+语法：
+
+```sql
+grant privileges ON database.table TO 'username'[@'host'] [with grant option]
+```
+
+**grant命令说明：**
+
+* privileges (权限列表)，可以是`all`，表示所有权限，也可以是`select、update`等权限，多个权限之间用逗号分开。
+* ON 用来指定权限针对哪些库和表，格式为`数据库.表名` ，点号前面用来指定数据库名，点号后面用来指定表名，`*.*` 表示所有数据库所有表。
+* TO 表示将权限赋予某个用户, 格式为`username@host`，@前面为用户名，@后面接限制的主机，可以是IP、IP段、域名以及%，%表示任何地方。
+* WITH GRANT OPTION 这个选项表示该用户可以将自己拥有的权限授权给别人。注意：经常有人在创建操作用户的时候不指定WITH GRANT OPTION选项导致后来该用户不能使用GRANT命令创建用户或者给其它用户授权。
+
+*备注：可以使用GRANT重复给用户添加权限，权限叠加，比如你先给用户添加一个select权限，然后又给用户添加一个insert权限，那么该用户就同时拥有了select和insert权限。*
+
+#### 查看用户有哪些权限
+
+**show grants for '用户名'[@'主机']**
+
+**show grants; **查看当前用户的权限
+
+#### 撤销用户的权限
+
+**语法**
+
+```sql
+revoke privileges ON database.table FROM '用户名'[@'主机'];
+```
+
+可以先通过`show grants`命令查询一下用户对于的权限，然后使用`revoke`命令撤销用户对应的权限
+
+#### 删除用户【2 种方式】
+
+**方式1：**
+
+**drop user '用户名'[@‘主机’]**
+
+**方式2：**
+
+通过删除 mysql.user 表数据的方式删除，注意通过表的方式删除的，需要调用`flush privileges;`刷新权限信息（权限启动的时候在内存中保存着，通过表的方式修改之后需要刷新一下）。
+
 ### 数据库三大设计范式
 
 * **1NF**
@@ -25,6 +125,304 @@
   消除冗余，就是各种信息只在一个地方存储，不出现在多张表中。
 
   
+
+### 详解事务
+
+#### 什么是事务
+
+**数据库中的事务是指对数据库执行一批操作，这些操作最终要么全部执行成功，要么全部失败，不会存在部分成功的情况。**
+
+#### 事务的几个特性（ACID）
+
+**原子性（Atomicity）**
+
+事务的整个过程如**原子操作**一样，最终要么全部成功，或者全部失败，这个原子性是从最终结果来看的，从最终结果来看这个过程是**不可分割**的。
+
+**一致性（Consistency）**
+
+事务开始之前、执行中、执行完毕，这些时间点，多个人去观察事务操作的数据的时候，看到的**数据都是一致**的。
+
+**隔离性（Isolation）**
+
+一个事务的执行不能被其他事务干扰。即一个事务内部的操作及使用的数据对并发的其他事务是**隔离**的，并发执行的各个事务之间不能互相干扰。
+
+**持久性（Durability）**
+
+一个事务一旦提交，他**对数据库中数据的改变就应该是永久性**的。当事务提交之后，数据会持久化到硬盘，修改是永久性的。
+
+#### MySQL 中的事务操作
+
+mysql中事务默认是隐式事务，执行insert、update、delete操作的时候，数据库自动开启事务、提交或回滚事务。
+
+是否开启隐式事务是由变量`autocommit`控制的。
+
+所以事务分为**隐式事务**和**显式事务**。
+
+##### 隐式事务
+
+> 事务自动开启、提交或回滚，比如insert、update、delete语句，事务的开启、提交或回滚由mysql内部自动控制的。
+
+查看变量`autocommit`是否开启了自动提交
+
+```sql
+mysql> show variables like 'autocommit';
++---------------+-------+
+| Variable_name | Value |
++---------------+-------+
+| autocommit    | ON    |
++---------------+-------+
+```
+
+> `autocommit`为ON表示开启了自动提交。
+
+##### 显式事务
+
+> 事务需要手动开启、提交或回滚，由开发者自己控制。
+
+2 种方式手动控制事务：
+
+**方式1：**
+
+语法：
+
+```sql
+//设置不自动提交事务
+set autocommit=0;
+//执行事务操作
+commit|rollback;
+```
+
+**方式2：**
+
+语法：
+
+```sql
+start transaction;//开启事务
+//执行事务操作
+commit|rollback;
+```
+
+##### savepoint 关键字
+
+在事务中我们执行了一大批操作，可能我们只想回滚部分数据，怎么做呢？
+
+我们可以将一大批操作分为几个部分，然后指定回滚某个部分。可以使用`savepoint`来实现，效果如下：
+
+```sql
+mysql> start transaction;
+Query OK, 0 rows affected (0.00 sec)
+
+mysql> insert into test1 values (1);
+Query OK, 1 row affected (0.00 sec)
+
+mysql> savepoint part1;//设置一个保存点
+Query OK, 0 rows affected (0.00 sec)
+
+mysql> insert into test1 values (2);
+Query OK, 1 row affected (0.00 sec)
+
+mysql> rollback to part1;//将savepint = part1的语句到当前语句之间所有的操作回滚
+Query OK, 0 rows affected (0.00 sec)
+
+mysql> commit;//提交事务
+Query OK, 0 rows affected (0.00 sec)
+
+mysql> select * from test1;
++------+
+| a    |
++------+
+|    1 |
++------+
+1 row in set (0.00 sec)
+```
+
+> 从上面可以看出，执行了2次插入操作，最后只插入了1条数据。
+>
+> `savepoint`需要结合`rollback to sp1`一起使用，可以将保存点`sp1`到`rollback to`之间的操作回滚掉。
+
+##### 只读事务
+
+表示在事务中执行的是一些只读操作，如查询，但是不会做insert、update、delete操作，数据库内部对只读事务可能会有一些性能上的优化。
+
+用法如下：
+
+```sql
+start transaction read only;
+```
+
+示例：
+
+```sql
+mysql> commit;
+Query OK, 0 rows affected (0.00 sec)
+
+mysql> start transaction read only;
+Query OK, 0 rows affected (0.00 sec)
+
+mysql> select * from test1;
++------+
+| a    |
++------+
+|    1 |
+|    1 |
++------+
+2 rows in set (0.00 sec)
+
+mysql> delete from test1;
+ERROR 1792 (25006): Cannot execute statement in a READ ONLY transaction.
+mysql> commit;
+Query OK, 0 rows affected (0.00 sec)
+
+mysql> select * from test1;
++------+
+| a    |
++------+
+|    1 |
+|    1 |
++------+
+2 rows in set (0.00 sec)
+```
+
+> 只读事务中执行 delete 会报错
+
+#### 事务中的问题
+
+这些问题主要是基于数据在多个事务中的可见性来说的。
+
+##### 脏读
+
+一个事务在执行的过程中**读取到了其他事务还没有提交的数据**。
+
+##### 不可重复读
+
+同一事务内多次读取同一数据集合结果不一致（多次查询间隔中其他事务提交修改了数据）
+
+##### 幻读
+
+**事务中后面的操作（插入号码X）需要上面的读取操作（查询号码X的记录）提供支持，但读取操作却不能支持下面的操作时产生的错误，就像发生了幻觉一样。**
+
+#### 事务的隔离级别
+
+**隔离级别分为4种：**
+
+1. **读未提交：READ-UNCOMMITTED**
+2. **读已提交：READ-COMMITTED**
+3. **可重复读：REPEATABLE-READ**
+4. **串行：SERIALIZABLE**
+
+上面4中隔离级别越来越强，会导致数据库的并发性也越来越低。
+
+##### 查看隔离级别
+
+```sql
+mysql> show variables like 'transaction_isolation';
++-----------------------+-----------------+
+| Variable_name         | Value           |
++-----------------------+-----------------+
+| transaction_isolation | REPEATABLE-READ |
++-----------------------+-----------------+
+```
+
+##### 隔离级别的设置
+
+```sql
+mysql> set global transaction isolation level read committed; //全局的
+mysql> set session transaction isolation level read committed; //当前会话
+```
+
+##### 各种隔离级别中会出现的问题
+
+| 隔离级别         | 脏读 | 不可重复读 | 幻读 |
+| ---------------- | ---- | ---------- | ---- |
+| READ-UNCOMMITTED | 有   | 有         | 无   |
+| READ-COMMITTED   | 无   | 有         | 无   |
+| REPEATABLE-READ  | 无   | 无         | 有   |
+| SERIALIZABLE     | 无   | 无         | 无   |
+
+#### 隔离级别的选择
+
+1. 需要对各种隔离级别产生的现象非常了解，然后选择的时候才能游刃有余
+2. 隔离级别越高，并发性也低，比如最高级别`SERIALIZABLE`会让事物串行执行，并发操作变成串行了，会导致系统性能直接降低。
+3. 具体选择哪种需要结合具体的业务来选择。
+4. 读已提交（READ-COMMITTED）通常用的比较多。
+
+
+
+### 详解视图
+
+#### 什么是视图
+
+##### 概念
+
+视图是在mysql5之后出现的，是一种虚拟表，行和列的数据来自于定义视图时使用的一些表中，**视图的数据是在使用视图的时候动态生成的，视图只保存了sql的逻辑，不保存查询的结果**。
+
+##### 使用场景
+
+多个地方使用到同样的查询结果，并且该查询结果比较复杂的时候，我们可以使用视图来隐藏复杂的实现细节。
+
+##### 视图和表的区别
+
+|      | 语法         | 实际中是否占用物理空间 | 使用                           |
+| ---- | ------------ | ---------------------- | ------------------------------ |
+| 视图 | create view  | 只是保存了sql的逻辑    | 增删改查，实际上我们只使用查询 |
+| 表   | create table | 保存了数据             | 增删改查                       |
+
+##### 视图的好处
+
+* 简化复杂的sql操作，不用知道他的实现细节
+* 隔离了原始表，可以不让使用视图的人接触原始的表，从而保护原始数据，提高了安全性
+
+#### 创建视图
+
+##### 语法
+
+```sql
+create view 视图名
+as
+查询语句;
+```
+
+##### 视图的使用步骤
+
+* 创建视图
+* 对视图执行查询操作
+
+#### 修改视图
+
+##### 方式一
+
+> 如果该视图存在，就修改，如果不存在，就创建新的视图。
+
+```sql
+create or replace view 视图名
+as
+查询语句;
+```
+
+##### 方式二
+
+```sql
+alter view 视图名
+as 
+查询语句;
+```
+
+#### 删除视图
+
+```sql
+drop view 视图名1 [,视图名2] [,视图名n];
+```
+
+#### 查询视图结构
+
+```sql
+/*方式1*/
+desc 视图名称;
+/*方式2*/
+show create view 视图名称;
+```
+
+
 
 ### SQL JOIN 连接查询
 
@@ -83,7 +481,7 @@ WHERE A.学号=B.学号
 ```sql
 --要在学生表里查询与 HH 同龄且籍贯也相同的学生信息
 SELECT B.学号, B.姓名, B.性别, B.籍贯, B.年龄
-FROM student A 
+FROM student A
 JOIN student B
 ON A.年龄=B.年龄 AND A.籍贯=B.籍贯 AND A.姓名='HH'
 ```
