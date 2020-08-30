@@ -683,6 +683,73 @@ NIO 是一种同步非阻塞 IO, 基于 Reactor 模型来实现的。
 
 ![img](https://mmbiz.qpic.cn/mmbiz_png/1J6IbIcPCLaRj51teUPPUDVohsACoBMVHaea33Nt2wjs36XKvG6P7Lk7GvVdE7lp1kgYAWNRAFp4aia8gaMwzwg/640?wx_fmt=png&tp=webp&wxfrom=5&wx_lazy=1&wx_co=1)
 
+#### NIO 核心组件详解
+
+**多路复用机制实现 Selector**
+
+首先我们来了解下传统的 Socket 网络通讯模型。
+
+**传统Socket通讯原理图**
+
+<img src="https://mmbiz.qpic.cn/mmbiz_png/1J6IbIcPCLaRj51teUPPUDVohsACoBMVPBWhch0tXTWl73IDynfMic6dtWb5Ujcrpx8alFTaQiaptt1M94zMrU3A/640?wx_fmt=png&amp;tp=webp&amp;wxfrom=5&amp;wx_lazy=1&amp;wx_co=1" alt="img" style="zoom: 80%;" />
+
+为什么传统的socket不支持海量连接？
+
+**每次一个客户端接入，都是要在服务端创建一个线程来服务这个客户端的**
+
+这会导致大量的客户端的时候，服务端的线程数量可能达到几千甚至几万，几十万，这会导致服务器端程序负载过高，不堪重负，最终系统崩溃死掉。
+
+接着来看下 NIO 是如何**基于 Selector 实现多路复用机制支持的海量连接**。
+
+**NIO原理图**
+
+![img](https://mmbiz.qpic.cn/mmbiz_png/1J6IbIcPCLaRj51teUPPUDVohsACoBMVMHY3tc8kfLlMnVBFibM3ibxKULbQEuP2ISYmEIwycOByOWibwMPedhUdA/640?wx_fmt=png&tp=webp&wxfrom=5&wx_lazy=1&wx_co=1)
+
+多路复用机制是如何支持海量连接？
+
+NIO 的线程模型对 Socket 发起的连接不需要每个都创建一个线程，完全可以**使用一个 Selector 来多路复用监听 N 多个 Channel 是否有请求**，该请求是对应的连接请求，还是发送数据的请求
+
+这里面是基于操作系统底层的 Select 通知机制的，**一个 Selector 不断的轮询多个 Channel，这样避免了创建多个线程**
+
+只有当每个 Channel 有对应的请求的时候才会创建线程，可能说1000个请求， 只有100个请求是有数据交互的
+
+这个时候可能 server 端就提供 10 个线程就能够处理这些请求。这样的话就可以避免了创建大量的线程。
+
+**NIO 如何通过 Buffer 来缓冲数据的**
+
+NIO 中的 Buffer 是个什么东西 ？
+
+![img](https://mmbiz.qpic.cn/mmbiz_png/1J6IbIcPCLaRj51teUPPUDVohsACoBMVWFDOUicLicQJuKlicrARGN15PXpTJuf1SIic09EwwcTm3IZy5Gvy4Xkzrg/640?wx_fmt=png&tp=webp&wxfrom=5&wx_lazy=1&wx_co=1)
+
+学习 NIO，首当其冲就是要了解所谓的 Buffer 缓冲区，这个东西是 NIO 里比较核心的一个部分
+
+一般来说，如果你要通过 **NIO 写数据到文件或者网络**，或者是**从文件和网络读取数据**出来此时就需要**通过 Buffer 缓冲区**来进行。Buffer 的使用一般有如下几个步骤：
+
+写入数据到 Buffer，调用 flip() 方法，从 Buffer 中读取数据，调用 clear() 方法或者 compact() 方法。
+
+Buffer 中对应的 Position， Mark， Capacity，Limit 都啥？
+
+![img](https://mmbiz.qpic.cn/mmbiz_png/1J6IbIcPCLaRj51teUPPUDVohsACoBMVC5duJ3GMTURh7JLLxx9fsHpgyylUe0UBw83VZ5WoglKxElkS6vJTlQ/640?wx_fmt=png&tp=webp&wxfrom=5&wx_lazy=1&wx_co=1)
+
+* **capacity**：缓冲区容量的大小，就是里面包含的数据大小。
+* **limit**：对 buffer 缓冲区使用的一个限制，从这个 index 开始就不能读取数据了。
+* **position**：代表着数组中可以开始读写的 index， 不能大于 limit。
+* **mark**：标记，表示记录当前 position 的位置，可以通过 reset() 恢复到 mark 位置
+
+**如何通过 Channel 和 FileChannel 读取 Buffer 数据写入磁盘的**
+
+NIO中，Channel是什么？ 
+
+Channel是NIO中的数据通道，类似流，但是又有些不同
+
+**Channel既可从中读取数据**，**又可以从写数据到通道中**，但是**流的读写通常是单向的**。
+
+Channel可以**异步的读写**。**Channel中的数据总是要先读到一个Buffer中**，或者**从缓冲区中将数据写到通道中**。
+
+![img](https://mmbiz.qpic.cn/mmbiz_png/1J6IbIcPCLaRj51teUPPUDVohsACoBMVUdpia43f2s5bVTVEshQGPfIZZguNFLwyNvD0Mhz67XYIvZCNt6MqVKw/640?wx_fmt=png&tp=webp&wxfrom=5&wx_lazy=1&wx_co=1)
+
+
+
 #### NIO 和 IO 的区别
 
 | IO     | NIO        |
