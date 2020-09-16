@@ -159,21 +159,23 @@ header 中包含了一些元信息，包括这个 Packet 是不是所属 block �
 
 ![](https://raw.githubusercontent.com/whn961227/images/master/data/20200725225922.png)
 
-1. Client 通过 DistributedFileSystem 向 NameNode 请求上传文件，NameNode 检查目标文件（文件是否存在，Client 是否有权限）。如果检查通过，NameNode 会在 edits 记录操作
-2. DistributedFileSystem 返回 FSDataOutputStream 对象给 Client 用于写数据，FSDataOutputStream 封装了 DFSOutputStream 对象负责 Client 和 DataNode 以及 NameNode 之间的通信
-3. Client 写数据时，DFSOutputStream 将写入的数据切分成 packets，存到内部的 dataQueue 队列，并且由 DataStreamer 消费处理。DataStreamer 请求 NameNode 分配 DataNode 列表，列表中的 DataNode 会形成 PipeLine，DataStreamer 将 Packet 发给 PipeLine 中的第一个 DN，第一个 DN 将接收到的 Packet 存储完后转发给第二个 DN，第二个 DN 存储完后再发送给第三个 DN ...，直到完成
-4. DFSOutputStream 为了防止出问题时数据的丢失，维持了一个等待 DataNode 成功写入的 ACK Queue，只有当 Packet 成功写入 PipeLine 中的每个 DataNode 时，此 Packet 才从 ACK Queue 中移除
-5. 当 Client 写完数据，调用 DFSOutputStream 对象的 close() 方法，该操作会将所有剩余 Packets 写到 DataNode PipeLine 并等待返回确认
-6. 告知 NameNode 写入文件完成
+1. 客户端通过 **Distributed FileSystem** 模块向 NM 请求上传文件，NN 检查目标文件是否存在，父目录是否存在
+2. NN 返回是否可以上传
+3. 客户端请求第一个 block 上传到哪几个 DN 上
+4. NN 返回 DN 节点，分别为 DN1，DN2，DN3
+5. 客户端通过 **FSDataOutputStream** 模块请求 DN1 建立传输通道，DN1 收到请求后会继续调用 DN2，DN2 调用DN3，将这个通信管道建立完成
+6. DN1，DN2，DN3 逐级应答客户端
+7. 客户端开始往 DN1 上传第一个 block（先从磁盘读取数据放到一个本地内存缓存），以 packet 为单位，DN1 收到一个 packet 就会传给 DN2，DN2 传给 DN3；DN1 每传一个 packet 会放入一个应答队列等待应答
+8. 当一个 block 传输完成后，客户端再次请求 NN 上传第二个 block 的 DN
 
 #### 读数据流程
 
 ![](https://raw.githubusercontent.com/whn961227/images/master/data/20200726171348.png)
 
-1. Client 调用 DistributedFileSystem.open() 方法，由 DistributedFileSystem 通过 RPC 向 NameNode 请求返回文件的 Block 块所在的 DataNode 地址，DistributedFileSystem 返回了一个输入流对象 FSDataInputStream，该对象封装了输入流 DFSInputStream
-2. 调用 FSDataInputStream.read() 方法从而让 DFSInputStream 连接到 DataNodes
-3. 通过循环调用 read() 方法，从而将数据从 DataNode 传输到 Client
-4. 当最后一个 Block 返回到 Client 后，DFSInputStream 关闭与 DataNode 连接
+1. 客户端通过 **Distributed FileSystem** 向 NN 请求下载文件，NN 通过查询元数据，找到文件块所在的 DN 地址
+2. 选择一台 DN （就近原则，然后随机）服务器，请求读取数据
+3. DN 开始传输数据给客户端（从磁盘里面读取数据输入流，以 packet 为单位来做校验）
+4. 客户端以 packet 为单位接收，先在本地缓存，然后写入目标文件
 
 
 
@@ -323,7 +325,7 @@ HDFS HA 功能通过配置 **Active/Standby 两个 NameNodes** 实现在集群�
 
 **ZKFC：**ZKFC 即 ZKFailoverController，作为独立进程存在，负责**控制 NameNode 的主备切换**，ZKFC 会监测 NameNode 的健康状况，当发现 Active NameNode 出现异常时会**通过 Zookeeper 集群进行一次主备选举**，完成 Active 和 Standby 状态的切换
 
-**JournalNode 集群：** **共享存储系统**，负责**存储 HDFS 的元数据**，**Active NameNode（写入）和 Standby NameNode（读取）通过共享存储系统实现元数据同步**，在主备切换过程中，新的 Active NameNode 必须确保元数据同步完成才能对外提供服务
+**JournalNode 集群：** **共享存储系统**，负责**存储 HDFS 的元数据*Edits文件***，**Active NameNode（写入）和 Standby NameNode（读取）通过共享存储系统实现元数据同步**，在主备切换过程中，新的 Active NameNode 必须确保元数据同步完成才能对外提供服务
 
 **Zookeeper 集群：**为 ZKFC 提供**主备选举**支持
 
@@ -370,6 +372,65 @@ MapReduce 是一个分布式运算程序的编程框架，核心功能是将用�
 * **不擅长实时计算**
 * **不擅长流式计算：**输入数据集是静态的
 * **不擅长 DAG（有向图）计算：**多个应用程序存在依赖关系，后一个应用程序的输入为前一个的输出。在这种情况下，每个 MapReduce 作业的输出结果都会写入到磁盘，会造成大量的磁盘 IO，导致性能非常的低下
+
+### WordCount 案例实操
+
+```java
+public class WordCountMapper extends Mapper<LongWritable, Text, Text, IntWritable>{
+
+	Text k = new Text();
+	IntWritable v = new IntWritable(1);
+
+	@Override
+	protected void map(LongWritable key, Text value, Context context) throws Exception {
+		String line = value.toString();
+		String[] words = line.toSplit(" ");
+		for(String word : Words) {
+			k.set(word);
+			context.write(k, v);
+		}
+	}
+}
+
+public class WordCountReducer extends Reducer<Text, IntWritable, Text, IntWritable> {
+	
+	IntWritable v = new IntWritable();
+
+	@Override
+	protected void reduce(Text key, Iterable<IntWritable> values, Context context) throws Exception {
+		int sum = 0;
+		for(IntWritable value : values) {
+			sum += value.get();
+		}
+		v.set(sum);
+		context.write(key, v);
+	}
+}
+
+public class WordCountDriver {
+	public static void main(String[] args) throws Exception {
+		Configuration configuration = new Configuration();
+		Job job = Job.getInstance(configuration);
+		// 设置 jar
+		job.setJarByClass(WordCountDriver.class);
+		// 设置 Mapper 类和 Reducer 类
+		job.setMapperClass(WordCountMapper.class);
+		job.setReducerClass(WordCountReducer.class);
+		// 设置 Mapper key value 输出类型
+		job.setMapOutputKeyClass(Text.class);
+		job.setMapOutputValueClass(IntWritable.class);
+		// 设置 Reducer key value 输出类型
+		job.setOutputKeyClass(Text.class);
+		job.setOutputValueClass(IntWritable.class);
+		// 设置输入输出路径
+		FileInputFormat.setInputPaths(job, new Path(args[0]));
+		FileOutputFormat.setOutputPaths(job, new Path(args[1]));
+
+		boolean res = job.waitForCompletion(true);
+		System.exit(res ? 0 : 1);
+	}
+}
+```
 
 
 
@@ -471,6 +532,12 @@ MapReduce 是一个分布式运算程序的编程框架，核心功能是将用�
 
 ![](https://raw.githubusercontent.com/whn961227/images/master/data/20200729113051.png)
 
+1. Map 方法之后，Reduce 方法之前这段处理过程叫做 shuffle
+2. Map 方法之后，**数据首先进入分区方法，把数据标记好分区**，然后**把数据发送到环形缓冲区**；环形缓冲区默认大小为 100M，**环形缓冲区达到阈值（80%）时，进行溢写**；**溢写前对数据进行排序**，排序按照对 key 的索引进行字典顺序排序，排序的手段`快排`；溢写产生大量溢写文件，需要**对溢写文件进行归并排序**；*对溢写的文件也可以进行 Combiner 操作*，前提是汇总操作，求平均值不行。最后**将文件按照分区存储到磁盘**，等待 Reduce 端拉取
+3. **每个 Reduce 拉取 Map 端对应分区的数据**。拉取数据后**先存储到内存中**，内存不够了，**再存储到磁盘**。拉取完所有数据后，**采用归并排序将内存和磁盘中的数据都进行排序**。在进入 Reduce 方法前，*可以对数据进行分组操作*
+
+
+
 ##### Partition 分区
 
 将统计结果按照条件输出到不同文件中（分区）
@@ -521,11 +588,36 @@ public class HashPartitioner<K, V> extends Partitioner<K, V> {
 
 #### Map Task 机制
 
+![](https://raw.githubusercontent.com/whn961227/images/master/data/20200912184024.png)
 
+1. Read 阶段：MapTask 通过用户编写的 RecordReader，从输入 InputSplit 中解析出一个个 key/value
+
+2. Map 阶段：该节点主要是将解析出的 key/value 交给用户编写 map() 函数处理，并产生一系列新的 key/value
+
+3. Collect 收集阶段：在用户编写map()函数中，当数据处理完成后，一般会调用 OutputCollector.collect() 输出结果。在该函数内部，它会**将生成的 key/value 分区（调用 Partitioner ）**，并写入一个环形内存缓冲区中。
+
+4. Spill 阶段：即“溢写”，当环形缓冲区满后，MapReduce 会将数据写到本地磁盘上，生成一个临时文件。需要注意的是，将数据写入本地磁盘之前，先要对数据进行一次本地排序，并在必要时对数据进行合并、压缩等操作。
+
+   溢写阶段详情：
+
+   1. 利用**快速排序**算法对缓存区内的数据进行排序，排序方式是，**先按照分区编号 Partition 进行排序，然后按照key进行排序**。这样，经过排序后，**数据以分区为单位聚集在一起，且同一分区内所有数据按照 key 有序**。
+   2. 按照分区编号由小到大依次将**每个分区中的数据写入**任务工作目录下的**临时文件** output/spillN.out（ N 表示当前溢写次数）中。**如果用户设置了 Combiner，则写入文件之前，对每个分区中的数据进行一次聚集操作**。
+   3. **将分区数据的元信息写到内存索引数据结构 SpillRecord 中**，其中每个分区的元信息包括在临时文件中的**偏移量**、**压缩前数据大小**和**压缩后数据大小**。如果当前内存索引大小超过 1MB，则将内存索引写到文件 output/spillN.out.index 中。
+
+5. Combine 阶段：**当所有数据处理完成后，MapTask 对所有临时文件进行一次合并，以确保最终只会生成一个数据文件**。
 
 
 
 #### Reduce Task 机制
+
+![](https://raw.githubusercontent.com/whn961227/images/master/data/20200912213510.png)
+
+1. Copy 阶段：ReduceTask **从各个 MapTask 上远程拷贝一片数据**，并针对某一片数据，**如果其大小超过一定阈值，则写到磁盘上，否则直接放到内存中**
+2. Merge 阶段：在远程拷贝数据的同时，**ReduceTask 启动了两个后台线程对内存和磁盘上的文件进行合并**，以防止内存使用过多或磁盘上文件过多
+3. Sort 阶段：按照 MapReduce 语义，用户编写 reduce() 函数输入数据是按 key 进行聚集的一组数据。为了将key 相同的数据聚在一起，Hadoop 采用了基于排序的策略。由于各个 MapTask 已经实现对自己的处理结果进行了局部排序，因此，ReduceTask 只需对所有数据进行一次**归并排序**即可
+4. Reduce 阶段：reduce() 函数将计算结果写到 HDFS 上
+
+
 
 #### OutputFormat 数据输出
 
@@ -634,10 +726,25 @@ public class HashPartitioner<K, V> extends Partitioner<K, V> {
 ### 资源调度器
 
 * **先进先出调度器（FIFO）**
+
+  ![](https://raw.githubusercontent.com/whn961227/images/master/data/20200914114212.png)
+
+  先进先出，同一时间队列中只有一个任务在执行
+
 * **容量调度器（Capacity Scheduler）**
+
+  ![](https://raw.githubusercontent.com/whn961227/images/master/data/20200912182534.png)
+
+  1. 多队列；每个队列内部先进先出，同一时间队列中只有一个任务在执行。**队列的并行度为队列的个数**
+  2. 首先，计算每个队列中正在运行的任务数与其应该分得的计算资源之间的比值，选择一个该比值最小的队列——**最闲**的，其次，按照作业优先级和提交时间顺序，同时考虑用户资源量限制和内存限制**对队列内任务排序**
+
 * **公平调度器（Fair Scheduler）**
 
+  ![](https://raw.githubusercontent.com/whn961227/images/master/data/20200914114727.png)
 
+  1. 多队列；每个队列内部按照**缺额**大小分配资源启动任务，同一个时间队列中有多个任务执行。队列的并行度大于等于队列的个数
+  2. **每个队列中的 job 按照优先级分配资源，优先级越高分配的资源越多**，但是每个 job 都会分配到资源以确保公平
+  3. 同一队列中，**job 的资源缺额越大，越先获得资源优先执行**，作业也是按照缺额的高低来先后执行的
 
 ## Hadoop RPC 机制
 
@@ -748,46 +855,60 @@ public class MyClient {
 
 ## Hadoop 企业优化
 
-### MR 优化方法
+### HDFS 优化
 
-* **数据输入**
+* HDFS 小文件影响
+  1. **影响 NN 的寿命，因为文件元数据存储在 NN 的内存中**
+     * 当 NN 重新启动时，必须**从本地磁盘上的缓存中读取每个文件的元数据**，这意味着要从磁盘中读取大量的数据，会导致**启动时间延迟**
+     * NN 必须不断**跟踪并检查集群中每个数据块的存储位置**。这是通过**监听数据节点**来报告其所有数据块来完成的。数据节点必须报告的块越多，它将**消耗的网络带宽**就越多。
+  2. **影响计算引擎的任务数量，比如每个小的文件都会生成一个 Map 任务**
+     * 大量的小文件意味**大量的随机磁盘 IO**，一次大的顺序读取总是胜过几次随机读取相同数量的数据
+     * **一个文件启动一个 map**，小文件越多，map 也越多，一个 map 启动一个 JVM 去执行，这些**任务的初始化、启动、执行会浪费大量的资源**，严重影响性能
+* 数据输入小文件处理
+  1. 合并小文件：对小文件进行**归档（Har）*Har 文件通过 Hadoop 的 archive 命令创建，实际上运行了 MR 任务来将小文件打包成 Har***、自定义 InputFormat 将小文件存储成 **SequenceFile 文件*用来存储二进制形式的 key-value 设计的一种平面文件* ***
+  2. 采用 **CombineFileInputFormat** 来作为输入，解决输入端大量小文件场景
+  3. 对于大量小文件 Job，可以开启 **JVM 重用**
 
-  1. **合并小文件**
-
-  2. **采用 CombineTextInputFormat** 来作为输入，解决输入端大量小文件场景
-
-* **Map 阶段**
-
-  1. **减少溢写（Spill）次数：**通过调整 mapreduce.task.io.sort.mb 及 mapreduce.map.sort.spill.percent 参数值，增大触发 Spill 的内存上限，减少 Spill 次数，从而减少磁盘 IO
-  2. **减少合并（Merge）次数：**通过调整 io.sort.factor 参数，增加 Merge 的文件数目，减少 Merge 的次数，从而缩短 MR 处理时间
-  3. 在 Map 之后，不影响业务逻辑前提下，先进行 Combine 处理，减少 I/O
-
-* **Reduce 阶段**
-  1. 合理设置 Map 和 Reduce 数
+* Map 阶段
+  1. **增大环形缓冲区大小，溢写的比例**
+  2. **减少对溢写文件的 merge 次数**
+  3. 在不影响实际业务的前提下，采用 **Combiner** 提前合并，减少 IO
+* Reduce 阶段
+  1. 合理设置 Map 和 Reduce 数：两个都不能设置太少，也不能设置太多。太少，会导致 Task 等待，延长处理时间；太多，会导致 Map、Reduce 任务间竞争资源，造成处理超时等错误
   2. **设置 Map、Reduce 共存：**调整 slowstart.completedmaps 参数，使 Map 运行到一定程度后，Reduce 也开始运行，减少 Reduce 的等待时间
   3. **规避使用 Reduce：**因为 Reduce 在用于连接数据集时会产生大量的网络消耗
-  4. **合理设置 Reduce 端的 Buffer：**默认情况下，数据达到一个阈值的时候，Buffer 中的数据就会写磁盘，然后 Reduce 会从磁盘中获得所有数据。也就是说，Buffer 和 Reduce 是没有直接关联的，中间会多次写磁盘 -> 读磁盘的过程，既然有这个弊端，那么就可以通过参数来配置，使得 Buffer 中的一部分数据可以直接输送到 Reduce，从而减少 IO 开销：mapreduce.reduce.input.buffer.percent，默认为 0.0。当值大于 0 的时候，会保留指定比例的内存读 Buffer 中的数据直接拿给 Reduce 使用。这样一来，设置 Buffer 需要内存，读取数据需要内存，Reduce 计算需要内存，所以要根据任务的运行情况进行调整
-* **IO 传输**
-  1. **采用数据压缩的方式：**安装 Snappy 和 LZO 压缩编码器
+  4. 增加每个 Reduce 去 Map 中取数据的并行数
+  5. 集群性能可以的前提下，增大 Reduce 端存储数据内存的大小
+* IO 传输
+  1. 采用数据压缩的方式，减少网络 IO 的时间。安装 Snappy 和 LZO 压缩编码器
   2. **使用 SequenceFile 二进制文件**
-* **数据倾斜问题**
-  1. **抽样和范围分区：**通过对原始数据进行抽样得到的结果集来预设分区边界值
-  2. **自定义分区**
-  3. Combine
-  4. 采用 Map Join，尽量避免 Reduce Join
-
-
-
-### HDFS 小文件优化
-
-**弊端：**HDFS 上每个文件都要在 NameNode 上建立一个索引，这个索引的大小约为 150 byte，这样当小文件比较多的时候，就会产生很多的索引文件，一方面会大量占用 NameNode 的内存空间，另一方面就是索引文件过大使得索引速度变慢
 
 **解决方案：**
 
 1. 在数据采集时，就将小文件或小批数据合并成大文件再上传 HDFS（**Archive**）
 2. 在业务处理之前，在 HDFS 上使用 MR 程序对小文件进行合并（**Sequence File**）
-3. 在 MR 处理时，采用 CombineTextInputFormat 提高效率
-4. **开启 JVM 重用：**对于大量小文件 job，可以开启 JVM 重用会减少 45% 运行时间。
-   * JVM 重用原理：一个 Map 运行在一个 JVM 上，开启重用的话，该 Map 在 JVM 上运行完毕后，JVM 继续运行其他 Map
-   * 具体设置：mapreduce.job.jvm.numtasks 值在 10 - 20 之间
 
+   
+
+* 数据倾斜
+
+  1. 提前在 map 进行 combine，减少传输的数据量
+
+     在 Mapper 加上 combiner 相当于提前进行 reduce，即把一个 Mapper 中的相同 key 进行了聚合，减少 shuflle 过程中传输的数据量，以及 Reducer 端的计算量
+
+     * 在不影响业务逻辑的前提下，仅限于汇总操作（累加、最大值等），求平均值就不行
+     * 如果导致数据倾斜的 key 大量分布在不同的 mapper 的时候，这种方法就不是很奏效了
+
+  2. 导致数据倾斜的 key 大量分布在不同的 mapper
+
+     * 局部聚合加全部聚合
+
+       第一次在 map 阶段对那些导致了数据倾斜的 key 加上 1 到 n 的随机前缀，这样本来相同的 key 也会被分到多个 Reducer 中进行局部聚合，数量就会大大降低
+
+       第二次 MR，去掉 key 的随机前缀，进行全局聚合
+
+       思想：两次 MR，第一次将 key 随机散列到不同的 reducer 进行处理达到负载均衡目的，第二次再去掉 key 的随机前缀，按原 key 进行 reduce 处理
+
+  3. 实现自定义分区
+
+     根据数据分布情况，自定义散列函数，将 key 均匀分配到不同的 Reducer

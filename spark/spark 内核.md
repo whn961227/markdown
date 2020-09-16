@@ -2,9 +2,19 @@
 
 ### 核心组件
 
-**Driver**
+**Driver** ：Spark驱动器节点，用于执行Spark任务中的main方法，负责实际代码的执行工作。Driver在Spark作业执行时主要负责：
 
-**Executor**
+1. 将用户程序转化为作业（job）
+2. 在Executor之间调度任务(task)
+3. 跟踪Executor的执行情况
+4. 通过UI展示查询运行情况
+
+**Executor** ：Spark Executor 节点是一个 JVM 进程，负责在 Spark 作业中运行具体任务，任务彼此之间相互独立。
+
+两个核心功能：
+
+1. 运行组成 Spark 应用的任务，并将结果返回给 Driver
+2. 它们通过自身的**块管理器（Block Manager）为用户程序中要求缓存的 RDD 提供内存式存储**。RDD 是直接缓存在 Executor 进程内的，因此任务可以在运行时充分利用缓存数据加速运算
 
 ### 通用运行流程概述
 
@@ -124,6 +134,8 @@ Spark Task 的调度是由 TaskScheduler 来完成，DAGScheduler 将 Stage 打�
 #### Shuffle 的核心要点
 
 ##### ShuffleMapStage 和 FinalStage
+
+![](https://raw.githubusercontent.com/whn961227/images/master/data/20200915100928.png)
 
 划分的 Stages 时，最后一个 Stage 称为 FinalStage，它本质上是一个 ResultStage 对象，前面的所有 Stage 被称为 ShuffleMapStage
 
@@ -261,11 +273,11 @@ shuffle write 阶段，task 就不是为下游 stage 的 每个 task 创建一�
 
 #### 堆内和堆外内存规划
 
-作为一个 JVM 进程，**Executor 的内存管理建立在 JVM 的内存管理上，Spark 对 JVM 的堆内（On-heap）空间进行了更为详细的分配，以充分利用内存**。同时，**Spark 引入了堆外（Off-heap）内存，使之可以直接在工作节点的系统内存中开辟空间，进一步优化了内存的使用**
+作为一个 JVM 进程，Executor 的内存管理建立在 **JVM** 的内存管理上，Spark 对 JVM 的**堆内（On-heap）空间**进行了更为详细的分配，以充分利用内存。同时，Spark 引入了**堆外（Off-heap）内存**，使之可以直接在工作节点的系统内存中开辟空间，进一步优化了内存的使用
 
 **堆内内存受到 JVM 统一管理，堆外内存是直接向操作系统进行内存的申请和释放**
 
-<img src="https://raw.githubusercontent.com/whn961227/images/master/data/20200807093539.png" style="zoom:25%;" />
+<img src="https://raw.githubusercontent.com/whn961227/images/master/data/20200807093539.png" style="zoom: 50%;" />
 
 ##### 堆内内存
 
@@ -285,17 +297,17 @@ Spark 对堆内内存的管理是一种逻辑上的**“规划式”**的管理�
 
 我们知道，JVM 的对象可以以**序列化**的方式**存储**，**序列化的过程**是**将对象转换为二进制字节流**，**本质上可以理解为将非连续空间的链式存储转化为连续空间或块存储**，在**访问时**则需要进行序列化的逆过程——**反序列化**，将字节流转化为对象，序列化的方式可以节省存储空间，但增加了存储和读取时候的计算开销。
 
-对于 Spark 中**序列化的对象**，由于是字节流的形式，**其占用的内存大小可直接计算**，而对于**非序列化的对象**，其占用的内存是**通过周期性采样近似估算**而得，即并不是每次新增的数据项都会计算一次占用的内存大小，这种方法**降低了时间开销**但是有可能**误差较大**，**导致某一时刻的实际内存有可能远远超出预期**。此外，**在被 Spark 标记为释放的对象实例，很有可能在实际上并没有被 JVM 回收，导致实际可用的内存小于 Spark 记录的可用内存。**所以 **Spark 不能准确记录实际可用的堆内内存，从而也就无法完全避免内存溢出（OOM）的异常**
+对于 Spark 中**序列化的对象**，由于是**字节流**的形式，其占用的**内存大小可直接计算**，而对于**非序列化的对象**，其占用的内存是通过**周期性采样近似估算**而得，即并不是每次新增的数据项都会计算一次占用的内存大小，这种方法降低了时间开销但是有可能**误差**较大，导致某一时刻的实际内存有可能远远超出预期。此外，*在被 Spark 标记为释放的对象实例，很有可能在实际上并没有被 JVM 回收，导致实际可用的内存小于 Spark 记录的可用内存*。所以 **Spark 不能准确记录实际可用的堆内内存，从而也就无法完全避免内存溢出（OOM）的异常**
 
-虽然不能精准控制堆内内存的申请和释放，但 Spark 通过对**存储内存**和**执行内存**各自独立的规划管理，可以决定是否要在存储内存里缓存新的 RDD，以及是否为新的任务分配执行内存，在一定程度上可以提升内存的利用率，减少异常的出现
+虽然不能精准控制堆内内存的申请和释放，但 Spark 通过对存储内存和执行内存各自独立的规划管理，可以决定是否要在存储内存里缓存新的 RDD，以及是否为新的任务分配执行内存，在一定程度上可以提升内存的利用率，减少异常的出现
 
 ##### 堆外内存
 
 为了进一步优化内存的使用以及提高 Shuffle 时排序的效率，Spark 引入了**堆外（Off-heap）内存**，使之可以**直接在工作节点的系统内存中开辟空间，存储经过序列化的二进制数据**
 
-堆外内存意味着**把内存对象分配在 Java 虚拟机的堆以外的内存**，**这些内存直接受操作系统管理**（而不是虚拟机）。这样做的结果就是**能保持一个较小的堆，以减少垃圾收集对应用的影响**
+*堆外内存意味着把内存对象分配在 Java 虚拟机的堆以外的内存，这些内存直接受操作系统管理（而不是虚拟机）。这样做的结果就是能保持一个较小的堆，以减少垃圾收集对应用的影响*
 
-利用 JDK Unsafe API（从 Spark 2.0 开始，在管理堆外的存储内存时不再基于 Tachyon，而是与堆外的执行内存一样，基于 JDK Unsafe API 实现），**Spark 可以直接操作系统堆外内存，减少了不必要的内存开销，以及频繁的 GC 扫描和回收，提升了处理性能**。堆外内存可以**被精确地申请和释放**（堆外内存之所以能够被精确的申请和释放，是由于**内存的申请和释放不再通过 JVM 机制**，而是**直接向操作系统申请**，**JVM 对于内存的清理是无法准确指定时间点的**，因此无法实现精确的释放），而且**序列化的数据占用的空间可以被精确计算**，所以相比堆内内存来说降低了管理的难度，也降低了误差
+利用 JDK Unsafe API（从 Spark 2.0 开始，在管理堆外的存储内存时不再基于 Tachyon，而是与堆外的执行内存一样，基于 JDK Unsafe API 实现），**Spark 可以直接操作系统堆外内存，减少了不必要的内存开销，以及频繁的 GC 扫描和回收，提升了处理性能**。*堆外内存可以被精确地申请和释放*（堆外内存之所以能够被精确的申请和释放，是由于内存的申请和释放不再通过 JVM 机制，而是直接向操作系统申请，*JVM 对于内存的清理是无法准确指定时间点的，因此无法实现精确的释放*），而且**序列化的数据占用的空间可以被精确计算**，所以相比堆内内存来说降低了管理的难度，也降低了误差
 
 在默认情况下堆外内存并不启用，可通过设置 spark.memory.offHeap.enabled 参数启用，并由 spark.memory.offHeap.size 参数设定堆外空间的大小。**除了没有 other 内存，堆外内存与堆内内存的划分方式相同，所有运行中的并发任务共享存储内存和执行内存**
 
@@ -337,7 +349,7 @@ Spark 1.6 之后引入的统一内存管理机制，**与静态内存管理的�
 
 其中最重要的优化在于**动态占用机制**，其规则如下：
 
-1. **设定基本的存储内存和执行内存区域**（spark.storage.storageFraction 参数），该设定确定了双方各自拥有的空间的范围
+1. 设定基本的存储内存和执行内存区域（spark.storage.storageFraction 参数），该设定确定了双方各自拥有的空间的范围
 2. **双方的空间都不足时，则存储到磁盘；若己方空间不足而对方空余时，可借用对方的空间**（存储空间不足是指不足以放下一个完整的 Block）
 3. **执行内存的空间被对方占用后，可让对方将占用的内存部分转存到硬盘，然后“归还”借用的空间**
 4. **存储内存的空间被对方占用后，无法让对方“归还”**，因为需要考虑 shuffle 过程中的很多因素，实现起来较为复杂
@@ -432,3 +444,74 @@ Block 有序列化和非序列化两种存储格式，具体以哪种方式取�
 
 在 ExternalSorter 和 Aggregator 中，Spark 会使用一种叫 AppendOnlyMap 的哈希表在堆内执行内存中存储数据，但在 Shuffle 过程中所有数据并不能都保存到该哈希表中，**当这个哈希表占用的内存会进行周期性地采样估算，当其大到一定程度，无法再从 MemoryManager 申请到新的执行内存时，Spark 就会将其全部内容存储到磁盘文件中，这个过程被称为溢存(Spill)，溢存到磁盘的文件最后会被归并(Merge)**
 
+### Spark 核心组件解析
+
+#### BlockManager 数据存储与管理机制
+
+![](https://raw.githubusercontent.com/whn961227/images/master/data/20200911201414.png)
+
+BlockManager 是整个 Spark 底层负责数据存储与管理的一个组件，Driver 和 Executor 的所有数据都由对应的BlockManager 进行管理。
+
+**Driver 上有 BlockManagerMaster**，**负责对各个节点上的 BlockManager 内部管理的数据的元数据进行维护**，比如 block 的增删改等操作，都会在这里维护好元数据的变更
+
+**BlockManagerMaster 中保存 BlockManager 内部管理数据的元数据，进行维护，当 BlockManager 进行 Block 增删改等操作时，都会在 BlockManagerMaster 中进行元数据的变更**
+
+每个节点上都有一个 BlockManager，BlockManager 中有 3 个非常重要的组件：
+
+* DiskStore：负责对磁盘数据进行读写
+* MemoryStore：负责对内存数据进行读写
+* BlockTransferService：负责建立 BlockManager 到远程其他节点的 BlockManager 的连接，负责对远程其他节点的 BlockManager 的数据进行读写
+
+**每个 BlockManager 创建之后，做的第一件事就是想 BlockManagerMaster 进行注册，此时 BlockManagerMaster 会为其创建对应的 BlockManagerInfo**
+
+*使用 BlockManager 进行写操作时，比如说，RDD 运行过程中的一些中间数据，或者我们手动指定了 persist()，会优先将数据写入内存中，如果内存大小不够，会使用自己的算法，将内存中的部分数据写入磁盘；此外，如果persist() 指定了要 replica，那么会使用 BlockTransferService 将数据 replicate 一份到其他节点的 BlockManager 上去*
+
+*使用 BlockManager 进行读操作时，比如说，shuffleRead 操作，如果能从本地读取，就利用 DiskStore 或者MemoryStore 从本地读取数据，但是本地没有数据的话，那么会用 BlockTransferService 与有数据的 BlockManager建立连接，然后用 BlockTransferService 从远程 BlockManager 读取数据；例如，shuffle Read 操作中，很有可能要拉取的数据在本地没有，那么此时就会到远程有数据的节点上，找那个节点的 BlockManager 来拉取需要的数据*
+
+只要使用 BlockManager 执行了数据增删改的操作，那么必须将 Block 的 BlockStatus 上报到 BlockManagerMaster，**在 BlockManagerMaster 上会对指定 BlockManager 的 BlockManagerInfo 内部的 BlockStatus 进行增删改操作**，从而达到元数据的维护功能
+
+#### Spark 共享变量底层实现
+
+Spark 一个非常重要的特性就是**共享变量**。
+
+默认情况下，如果在一个算子的函数中使用到了某个外部的变量，那么这个变量的值会**被拷贝到每个 task 中**，此时每个 task 只能操作自己的那份**变量副本**。如果多个 task 想要共享某个变量，那么这种方式是做不到的
+
+Spark 为此提供了两种共享变量，一种是 **Broadcast Variable（广播变量）**，另一种是 **Accumulator（累加变量）**
+
+Broadcast Variable 会将用到的变量，仅仅为每个节点拷贝一份，即**每个 Executor 拷贝一份**，更大的用途是优化性能，减少网络传输以及内存损耗。
+
+Accumulator 则可以让**多个 task 共同操作一份变量**，主要可以进行累加操作。
+
+**Broadcast Variable 是共享读变量**，task 不能去修改它，而 **Accumulator 可以让多个 task 操作一个变量**。
+
+##### 广播变量
+
+广播变量允许编程者在每个 Executor 上保留外部数据的只读变量，而不是给每个任务发送一个副本。
+
+每个 task 都会保存一份它所使用的外部变量的副本，当一个 Executor 上的多个 task 都使用一个大型外部变量时，对于 Executor 内存的消耗是非常大的，因此，我们可以将大型外部变量封装为广播变量，此时一个 Executor 保存一个变量副本，此 Executor 上的所有 task 共用此变量，不再是一个 task 单独保存一个副本，这在一定程度上降低了 Spark 任务的内存占用
+
+<img src="https://raw.githubusercontent.com/whn961227/images/master/data/20200911204728.png" style="zoom:80%;" />
+
+Spark 提供的 Broadcast Variable 是**只读的**，并且在每个 Executor 上只会有一个副本，而不会为每个 task 都拷贝一份副本，因此，它的最大作用，就是**减少变量到各个节点的网络传输消耗，以及在各个节点上的内存消耗**。此外，Spark 内部也使用了高效的广播算法来减少网络消耗
+
+可以通过**调用 SparkContext 的 broadcast() 方法来针对每个变量创建广播变量**。然后在算子的函数内，使用到广播变量时，每个 Executor 只会拷贝一份副本了，**每个 task 可以使用广播变量的 value() 方法获取值**
+
+在任务运行时，Executor 并不获取广播变量，当 task 执行到 使用广播变量的代码时，会向 Executor 的内存中请求广播变量，如下图所示：
+
+![](https://raw.githubusercontent.com/whn961227/images/master/data/20200911205802.png)
+
+之后 Executor 会通过 BlockManager 向 Driver 拉取广播变量，然后提供给 task 进行使用，如下图所示：
+
+![](https://raw.githubusercontent.com/whn961227/images/master/data/20200911210202.png)
+
+##### 累加器
+
+累加器（accumulator）：Accumulator 是**仅仅被相关操作累加的变量**，因此可以在并行中被有效地支持。它们可用于实现**计数器**（如MapReduce）或**总和计数**
+
+**Accumulator 是存在于 Driver 端的，集群上运行的 task 进行 Accumulator 的累加，随后把值发到 Driver 端，在 Driver 端汇总**（Spark UI 在 SparkContext 创建时被创建，即在 Driver 端被创建，因此它可以读取 Accumulator 的数值），**由于 Accumulator 存在于 Driver 端，从节点读取不到 Accumulator 的数值**
+
+**Spark 提供的 Accumulator 主要用于多个节点对一个变量进行共享性的操作**。Accumulator 只提供了累加的功能，但是却给我们提供了多个 task 对于同一个变量并行操作的功能，但是 **task 只能对 Accumulator 进行累加操作，不能读取它的值**，只有 Driver 程序可以读取 Accumulator 的值
+
+Accumulator 的底层原理如下图所示：
+
+![](https://raw.githubusercontent.com/whn961227/images/master/data/20200911210716.png)
