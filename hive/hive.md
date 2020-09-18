@@ -325,9 +325,15 @@ row format delimited fields terminated by '\t';
 
 #### 分区表
 
+##### 概念
+
 分区表实际上就是对应一个 HDFS 文件系统上的独立文件夹，该文件夹下是该分区的所有数据文件。Hive 中的分区就是**分目录**，把一个大的数据集根据业务需要分割成小的数据集。**在查询时通过 where 子句中的表达式选择查询所需要的指定的分区**，这样的查询效率会提高很多
 
-**创建分区表**
+##### 应用场景
+
+管理大规模数据集的时候需要分区，比如**日志文件按天分区**
+
+##### 创建分区表
 
 ```sql
 create table test_partition(
@@ -340,6 +346,7 @@ row format delimited fields terminated by '\t';
 **加载数据到分区表中**
 
 ```sql
+-- 加载数据到分区表中需要指定分区
 load data local inpath '/opt/module/datas/test.txt' into table test_partition partition(month='201809');
 load data local inpath '/opt/module/datas/test.txt' into table test_partition partition(month='201808');
 load data local inpath '/opt/module/datas/test.txt' into table test_partition partition(month='201807');
@@ -403,7 +410,7 @@ show partitions test_partition;
 desc formatted test_partition;
 ```
 
-**创建二级分区表**
+##### 创建二级分区表
 
 ```sql
 create table test_partition(
@@ -424,6 +431,36 @@ load data local inpath '/opt/module/datas/dept.txt' into table
 
 ```sql
 select * from dept_partition2 where month='201709' and day='13';
+```
+
+#### 分桶表
+
+##### 简介
+
+并非所有的数据集都可以形成合理的分区，分区的数量也不是越多越好，会导致很多分区没有数据。同时 Hive 会限制动态分区可以创建的最大分区数，用来避免过多的分区文件对文件系统产生负担。
+
+Hive 提供了一种更加细粒度的数据拆分方案：**分桶表**
+
+**分桶表会将指定列的值进行哈希散列，并对 bucket（桶数量）取余，然后存储到对应的 bucket 中**
+
+##### 创建分桶表
+
+```sql
+create table stu_buck(id int, name string)
+clustered by(id) into 4 buckets -- 按 id 散列到四个 bucket 中
+row format delimited fields terminated by '\t';
+```
+
+**加载数据**
+
+如果直接使用 `load` 语句向分桶表中加载数据，数据是可以加载成功的，但是不会分桶。
+
+由于分桶的实质是对指定字段 hash 散列然后存放到对应文件中，这意味向分桶表中加载数据需要进行 MR，且 Reducer 数量必须等于分桶的数量。
+
+```sql
+-- 导入数据到分桶表，通过子查询的方式
+insert into table stu_buck
+select id, name from stu;
 ```
 
 

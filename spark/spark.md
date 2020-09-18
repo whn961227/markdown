@@ -122,7 +122,7 @@ RDD 是弹性分布式数据集，是 Spark 中最基本的数据抽象，代码
 
 **分区**
 
-RDD 逻辑上是分区的，每个分区的数据是抽象存在的，计算的时候会通过一个 **compute** 函数得到每个分区的数据。如果 RDD 是通过已有的文件系统构建，则 compute 函数是读取指定文件系统中的数据，如果 RDD 是通过其他 RDD 转化而来，则 compute 函数是执行转换逻辑将其他 RDD 的数据进行转换
+RDD 逻辑上是分区的，由一个或多个分区组成。对于 RDD 来说，每个分区会被一个计算任务所处理。
 
 **只读**
 
@@ -134,7 +134,7 @@ RDD 的操作算子包括两类，一类叫做 transformations，它是用来将
 
 **依赖**
 
-RDD 通过操作算子进行转换，转换得到的新 RDD 包含了从其他 RDD 衍生所必需的信息，RDD 之间维护着这种血缘关系，也称之为**依赖**。
+RDD 通过操作算子进行转换，转换得到的新 RDD 包含了从其他 RDD 衍生所必需的信息，RDD 之间维护着这种血缘关系，也称之为**依赖**。部分分区数据丢失后，可以通过依赖关系重新计算丢失的分区数据，而不是对 RDD 的所有分区进行重新计算。
 
 <img src="https://raw.githubusercontent.com/whn961227/images/master/data/20200804093915.png" style="zoom:33%;" />
 
@@ -319,33 +319,29 @@ RDD 任务可以切分为：Application、Job、Stage 和 Task
 
 #### RDD 缓存
 
-RDD 通过 persist 方法或 cache 方法可以将前面的计算结果缓存，默认情况下 persist() 会把数据以序列化的形式缓存在 JVM 的堆空间中
+Spark 非常快速的一个原因是 RDD 支持缓存。成功缓存后，如果之后的操作使用到了该数据集，直接从缓存中获取。虽然缓存也有丢失的风险，但是由于 RDD 之间的依赖关系，如果某个分区的缓存数据丢失，只需要重新计算该分区的数据即可。
 
-但是并不是这两个方法被调用时立即缓存，而是触发后面的 action 时，该 RDD 将会被缓存在计算节点的内存中，并供后面重用
+##### 缓存级别
 
-cache 底层是调用了 persist 方法，默认的存储级别是**仅在内存存储一份**
+| Storage Level                          | Meaning                                                      |
+| -------------------------------------- | ------------------------------------------------------------ |
+| MEMORY_ONLY                            | 默认的缓存级别，将 RDD 以反序列化的 Java 对象的形式存储在 JVM 中，如果内存空间不够，则部分分区数据将不再缓存 |
+| MEMORY_ONLY_DISK                       | 将 RDD 以反序列化的 Java 对象的形式存储在 JVM 中，如果内存空间不够，将未缓存的数据存在磁盘上，在需要这些分区时从磁盘读取 |
+| MEMORY_ONLY_SER                        | 将 RDD 以序列化的 Java 对象的形式进行存储（每一个分区为一个 byte 数组）。这种方式比反序列化对象节省存储空间，但在读取时会增加 CPU 的计算负担。仅支持 Java 和 Scala |
+| MEMORY_ONLY_DISK_SER                   | 类似于 MEMORY_ONLY_SER，但是溢出的数据会存储到磁盘，而不是在用到它们时重新计算。仅支持 Java 和 Scala |
+| DISK_ONLY                              | 只在磁盘上缓存 RDD                                           |
+| MEMORY_ONLY_2，MEMORY_ONLY_DISK_2，etc | 与上面的对应级别功能相同，但是会为每个分区在集群中的两个节点上建立副本 |
+| OFF_HEAP                               | 与 MEMORY_ONLY_SER 类似，但将数据存储在堆外内存。这需要启动堆外内存 |
 
-Spark 的存储级别还有很多种，存储级别在 object StorageLevel 中定义：
 
-```scala
-// 在存储级别的末尾加上“_2”来把持久化数据存为 2 份
-val NONE = new StorageLevel(false, false, false, false)
-val DISK_ONLY = new StorageLevel(true, false, false, false)
-val DISK_ONLY_2 = new StorageLevel(true, false, false, false, 2)
-val MEMORY_ONLY = new StorageLevel(false, true, false, true)
-val MEMORY_ONLY_2 = new StorageLevel(false, true, false, true, 2)
-val MEMORY_ONLY_SER = new StorageLevel(false, true, false, false)
-val MEMORY_ONLY_SER_2 = new StorageLevel(false, true, false, false, 2)
-// 如果数据在内存中放不下，则溢写到磁盘上
-val MEMORY_AND_DISK = new StorageLevel(true, true, false, true)
-val MEMORY_AND_DISK_2 = new StorageLevel(true, true, false, true, 2)
-// 如果数据在内存中放不下，则溢写到磁盘上。在内存中存放序列化后的数据
-val MEMORY_AND_DISK_SER = new StorageLevel(true, true, false, false)
-val MEMORY_AND_DISK_SER_2 = new StorageLevel(true, true, false, false, 2)
-val OFF_HEAP = new StorageLevel(true, true, true, false, 1)
-```
 
-缓存有可能丢失，或者存储内存的数据由于内存不足而被删除，RDD 的缓存容错机制保证了即使缓存丢失也能保证计算的正确执行。通过基于 RDD 的一系列转换，丢失的数据会被重新计算，由于 RDD 的各个 Partition 是相对独立的，因此只需要计算丢失的部分即可，不需要重算全部 Partition
+##### 移除缓存
+
+Spark 会自动监视每个节点上的缓存使用情况，并按照 LRU 的规则删除旧分区数据。
+
+也可以使用 `RDD.unpersist()`方法进行手动删除。
+
+
 
 #### RDD CheckPoint
 
