@@ -22,6 +22,8 @@ Source 到 Channel 是 Put 事务
 
 Channel 到 Sink 是 Take 事务
 
+Flume 的事务有 4 个生命周期函数，分别是 `start`，`commit`，`rollback`，`close`。当 Source 往 Channel 批量投递事件时首先调用 `start` 开启事务，批量  put 完事件后通过 `commit` 来提交事务，如果 `commit` 异常则 `rollback`，然后 `close` 事务，最后 Source 将刚才提交的一批消息事务向源服务 ack。
+
 ### Agent 内部原理
 
 ![](https://raw.githubusercontent.com/whn961227/images/master/data/20200914152749.png)

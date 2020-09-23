@@ -622,50 +622,6 @@ select * from emp distribute by deptno sort by empno desc;
 
 cluster by 除了具有 distribute by 的功能外还兼具 sort by 的功能，但是排序只能是**升序**排序，不能指定排序规则为 ASC 或者 DESC
 
-#### 分桶及抽样查询
-
-**分区针对的是数据的存储路径；分桶针对的是数据文件**
-
-分区提供一个隔离数据和优化查询的遍历方式
-
-分桶是将数据集分解成更容易管理的若干部分的另一个技术
-
-```sql
--- 需要设置属性
-set hive.enforce.bucketing = true;
-set mapreduce.job.reduces = -1;
-
--- 创建普通表
-create table stu(id int, name string)
-row format delimited fields terminated by '\t';
--- 导入数据
-load data local inpath '/opt/module/datas/student.txt' into table stu;
--- 创建分桶表
-create table stu_buck(id int, name string)
-clustered by(id)
-into 4 buckets
-row format delimited fields terminated by '\t';
--- 导入数据到分桶表，通过子查询的方式
-insert into table stu_buck
-select id, name from stu;
-```
-
-**分桶抽样查询**
-
-对于非常大的数据集，有时用户需要使用的是一个具有代表性的查询结果而不是全部结果，Hive 可以通过对表进行抽样来满足这个需求
-
-```sql
-select * from stu_buck tablesample(bucket 1 out of 4 on id);
-```
-
-> 注：tablesample 是抽样语法，语法：tablesample (bucket x out of y)
->
-> y 必须是 table 总 bucket 数的倍数或者因子。Hive 根据 y 的大小，决定抽样的比例。例如，table 总共分了 4 份，当 y = 2 时，抽取 (4/2=) 2 个 bucket 的数据，当 y = 8 时，抽取 (4/8=)1/2 个 bucket 的数据
->
-> x 表示从哪个 bucket 开始抽取，如果需要取多个分区，以后的分区号为当前分区号加上 y。例如，table 总 bucket 数为 4，tablesample(bucket 1 out of 2)，表示总共抽取 (4/2=) 2 个 bucket 的数据，抽取第 1(x) 个和第 3(x+y) 个 bucket 的数据
->
-> 注意：x 的值必须小于等于 y 的值
-
 
 
 #### 其他常用查询函数

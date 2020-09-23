@@ -187,7 +187,7 @@ producer = new KafkaProducer<String,String>(properties);
 Kafka 选择了第二种方案，原因如下：
 
 1. 同样为了容忍 n 台节点的故障，第一种方案需要 2n+1 个副本，而第二种方案只需要 n+1
-2. 虽然第二种方案的网络延迟会比较高，但网络延迟对Kafka 的影响较小
+2. 虽然第二种方案的网络延迟会比较高，但网络延迟对 Kafka 的影响较小
 
 2）ISR
 

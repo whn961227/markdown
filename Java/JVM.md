@@ -605,3 +605,4 @@ public class Test {
 使得 **Java 类**随着它的类加载器一起具有一种带有**优先级**的层次关系，从而使得基础类得到统一
 
 例如 java.lang.Object 存放在 rt.jar 中，如果编写另外一个 java.lang.Object 并放到 ClassPath 中，程序可以编译通过。由于双亲委派模型的存在，所以在 rt.jar 中的 Object 比在 ClassPath 中的 Object 优先级更高，这是因为 rt.jar 中的 Object 使用的是启动类加载器，而 ClassPath 中的 Object 使用的是应用程序类加载器。 rt.jar 中的 Object 优先级更高，那么程序中所有的 Object 都是这个 Object
+

@@ -744,7 +744,7 @@ select--from--where--group by--having--order by
 
 六个关键词的执行顺序为
 
-from--where--group by--having--select--order by
+**from--where--group by--having--select--order by**
 
 from：需要从哪个数据表检索数据 
 

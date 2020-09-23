@@ -21,3 +21,6 @@ ZK 是一个开源的分布式的，为分布式应用提供协调服务的 Apac
 #### 监听器原理
 
 ![](https://raw.githubusercontent.com/whn961227/images/master/data/20200914145751.png)
+
+### ZK 是如何保证数据一致性的
+

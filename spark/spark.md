@@ -333,8 +333,6 @@ Spark 非常快速的一个原因是 RDD 支持缓存。成功缓存后，如果
 | MEMORY_ONLY_2，MEMORY_ONLY_DISK_2，etc | 与上面的对应级别功能相同，但是会为每个分区在集群中的两个节点上建立副本 |
 | OFF_HEAP                               | 与 MEMORY_ONLY_SER 类似，但将数据存储在堆外内存。这需要启动堆外内存 |
 
-
-
 ##### 移除缓存
 
 Spark 会自动监视每个节点上的缓存使用情况，并按照 LRU 的规则删除旧分区数据。
@@ -537,15 +535,17 @@ Spark SQL 转换成 RDD，然后提交到集群执行，执行效率非常快
 
 #### DataFrame 定义
 
-与 RDD 类似，DataFrame 也是一个分布式数据容器。然而 DataFrame 更像传统数据库的二维表格，除了**数据**以外，还记录数据的结构信息，即 **Schema**。同时，与 Hive 类似，DataFrame 也支持**嵌套数据类型**（struct，array 和 map）
+DataFrame 和 RDDs 最主要的区别在于一个面向的是结构化数据，一个面向的是非结构化数据，它们内部的数据结构如下：
 
 <img src="https://raw.githubusercontent.com/whn961227/images/master/data/20200805091655.png" style="zoom: 25%;" />
 
-上图体现了 DataFrame 和 RDD 的区别。左侧的 RDD[Person] 虽然以 Person 为类型参数，但 Spark 框架本身不了解 Person 类的内部结构。而右侧的 DataFrame 却提供了详细的结构信息，使得 Spark SQL 可以清楚地知道该数据集中包含哪些列，每列的名称和类型各是什么。
+DataFrame 内部的有明确的 schema 结构，即列名、列字段类型都是已知的，这样带来的好处是可以减少数据读取以及更好地优化执行计划，从而保证查询效率
 
-DataFrame 为数据提供了 Schema 的视图，可以把它当作数据库中的一张表来对待，DataFrame 也是懒执行的，性能比 RDD 要高，主要原因：
+#### DataFrame 和 RDDs 应该如何选择
 
-优化的执行计划：查询计划通过 Spark catalyst optimiser 进行优化
+* 如果想使用函数式编程而不是 DataFrame API，则使用 RDDs；
+* 如果数据是非结构化的，则使用 RDDs；
+* 如果数据是结构化的，或者是半结构化的，出于性能上的考虑，应优先使用 DataFrame
 
 #### DataSet 定义
 
@@ -554,8 +554,8 @@ DataFrame 为数据提供了 Schema 的视图，可以把它当作数据库中�
 3. DataSet 支持编解码器，当需要访问非堆上的数据时可以避免反序列化整个对象，提高了效率
 4. 样例类被用来在 DataSet 中定义数据的结构信息，样例类中每个属性的名称直接映射到 DataSet 中的字段名称
 5. DataFrame 是 DataSet 的特例，DataFrame = DataSet[Row]，所以可以通过 as 方法将 DataFrame 转换为 DataSet。Row 是一个类型
-6. DataSet 是强类型的
-7. DataFrame 只是知道字段，但是不知道字段的类型，所以在执行这些操作的时候是没办法在编译的时候检查是否类型失败的，而 DataSet 不仅仅知道字段，而且知道字段类型，所以有更严格的错误检查
+6. DataSet 是**强类型**的
+7. DataFrame 只是知道字段，但是不知道字段的类型，所以在执行这些操作的时候是没办法在编译的时候检查是否类型失败的，而 DataSet 不仅仅知道字段，而且知道字段类型，所以有**更严格的错误检查**
 
 
 
@@ -747,6 +747,14 @@ Window Operations 可以设置窗口的大小和滑动窗口的间隔来动态�
 
 窗口时长控制每次计算最近的多少个批次的数据，其实就是最近的 windowDuration/batchInterval 个批次。滑动步长的默认值与批次间隔相等，用来控制对新的 DStream 进行计算的间隔
 
+## Shuffle
+
+### shuffle 介绍
+
+在 Spark 中，一个任务对应一个分区，通常不会跨分区操作数据。但是如果遇到 `reduceByKey` 等操作，Spark 必须从所有分区读取数据，查找所有键的所有值，然后汇总在一起以计算每个键
+
+
+
 ## 数据倾斜解决方案
 
 #### 过滤少数导致倾斜的 key
@@ -759,3 +767,48 @@ Window Operations 可以设置窗口的大小和滑动窗口的间隔来动态�
 
 
 
+## Spark 何如调优
+
+1. 使用 `foreachPartitions` 替代 `foreach`
+
+   一次函数调用处理一个 partition 的所有数据，而不是一次函数调用处理一条数据。
+
+   例如：在 `foreach` 函数中，将 RDD 中的所有数据写入 MySQL，如果是普通的` foreach` 算子，就会逐条数据写，每次函数调用可能就会创建一个数据库连接，会频繁的创建和销毁数据库连接，性能低下；但是如果使用 `foreachPartitions` 算子，一次性处理一个 partition 的数据，对于每个 partition，只要创建一个数据库连接即可，然后执行批量插入操作，性能较高。
+
+2. 设置 `num-executors` 参数
+
+   **参数说明：** 该参数用于设置 Spark 作业总共要用多少个 executor 进程来执行。如果不设置，默认只会给你启动少量的 executor 进程，此时 Spark 作业的运行速度非常慢。
+
+   **调优建议：** 设置太少，无法充分利用集群资源；设置太多，可能无法给予充分的资源。建议设置 1-5
+
+3. 设置 `executor-memory`参数
+
+   **参数说明：** 设置每个 executor 进程的内存。executor 的内存大小，直接决定 Spark 作业的性能，而且跟常见的 JVM OOM 异常也有直接关联。
+
+   **调优建议：** 建议设置 512M 以下
+
+4. 设置 `executor-cores` 参数
+
+   **参数说明：** 设置每个 executor 进程的 CPU core 数量。这个参数决定了每个 executor 进程并行执行 task 线程的能力。
+
+   **调优建议：** 设置 2-4 个合适
+
+5. 设置 `driver-memory`
+
+   **参数说明：** 设置 Driver 进程的内存
+
+   **调优建议：** 通常不设置，或者设置 512M 以下
+
+6. `spark.default.parallelism`
+
+   **参数说明：** 设置每个 stage 的默认 task 数量。这个参数极为重要，如果不设置可能会影响 Spark 作业性能
+
+   **调优建议：** Spark 根据底层 HDFS 的 block 数量来设置 task 的数量，默认是一个 HDFS block 对应一个 task。
+
+7. `spark.storage.memoryFraction`
+
+   **参数说明：** 设置 RDD 持久化数据在 executor 内存中能占的比例
+
+8. `spark.shuffle.memoryFracion`
+
+   **参数说明：** 设置 shuffle 过程中一个 task 拉取到上个 stage 的 task 输出后，进行聚合操作时能够使用的 executor 内存的比例
